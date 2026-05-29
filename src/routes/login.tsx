@@ -329,76 +329,6 @@ function Login() {
                     ))}
                   </select>
                 </div>
-
-                {regRole === "patient" && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Prénom</label>
-                      <input
-                        type="text"
-                        value={regFirstName}
-                        onChange={(e) => setRegFirstName(e.target.value)}
-                        placeholder="Pierre"
-                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Nom</label>
-                      <input
-                        type="text"
-                        value={regLastName}
-                        onChange={(e) => setRegLastName(e.target.value)}
-                        placeholder="Durand"
-                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Sexe</label>
-                      <select
-                        value={regSex}
-                        onChange={(e) => setRegSex(e.target.value)}
-                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
-                        required
-                      >
-                        <option value="">— Sélectionner —</option>
-                        <option value="M">M</option>
-                        <option value="F">F</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Date de naissance</label>
-                      <input
-                        type="date"
-                        value={regBirthDate}
-                        onChange={(e) => setRegBirthDate(e.target.value)}
-                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1.5 col-span-2">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Groupe sanguin</label>
-                      <select
-                        value={regBlood}
-                        onChange={(e) => setRegBlood(e.target.value)}
-                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
-                        required
-                      >
-                        <option value="">— Sélectionner —</option>
-                        <option value="A+">A+</option>
-                        <option value="A-">A-</option>
-                        <option value="B+">B+</option>
-                        <option value="B-">B-</option>
-                        <option value="AB+">AB+</option>
-                        <option value="AB-">AB-</option>
-                        <option value="O+">O+</option>
-                        <option value="O-">O-</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Adresse e-mail</label>
                   <div className="relative">
@@ -478,6 +408,74 @@ function Login() {
                     ))}
                   </select>
                 </div>
+                {regRole === "patient" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Prénom</label>
+                      <input
+                        type="text"
+                        value={regFirstName}
+                        onChange={(e) => setRegFirstName(e.target.value)}
+                        placeholder="Pierre"
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Nom</label>
+                      <input
+                        type="text"
+                        value={regLastName}
+                        onChange={(e) => setRegLastName(e.target.value)}
+                        placeholder="Durand"
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Sexe</label>
+                      <select
+                        value={regSex}
+                        onChange={(e) => setRegSex(e.target.value)}
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      >
+                        <option value="">— Sélectionner —</option>
+                        <option value="M">M</option>
+                        <option value="F">F</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Date de naissance</label>
+                      <input
+                        type="date"
+                        value={regBirthDate}
+                        onChange={(e) => setRegBirthDate(e.target.value)}
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5 col-span-2">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Groupe sanguin</label>
+                      <select
+                        value={regBlood}
+                        onChange={(e) => setRegBlood(e.target.value)}
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      >
+                        <option value="">— Sélectionner —</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Nom complet</label>
