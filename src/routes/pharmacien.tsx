@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { type Medicine } from "@/lib/store";
-import { Pill, AlertTriangle } from "lucide-react";
+import { Pill, AlertTriangle, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
+import { toast } from "sonner";
+import { hasGemini, stockReorderAdvice } from "@/lib/ai";
 
 export const Route = createFileRoute("/pharmacien")({ component: PharmacienHome });
 
@@ -11,6 +13,8 @@ function PharmacienHome() {
   const [meds, setMeds] = useState<Medicine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [advice, setAdvice] = useState<string>("");
 
   useEffect(() => {
     let alive = true;
@@ -57,6 +61,24 @@ function PharmacienHome() {
 
   const lowStock = useMemo(() => meds.filter((m: Medicine) => m.stock <= m.threshold), [meds]);
 
+  async function runAdvice() {
+    try {
+      if (!hasGemini()) {
+        toast.error("Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env et relancez.");
+        return;
+      }
+      setAiLoading(true);
+      const txt = await stockReorderAdvice(
+        lowStock.map((m) => ({ name: m.name, stock: m.stock, threshold: m.threshold })),
+      );
+      setAdvice(txt);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Assistant IA indisponible.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   return (
     <DashboardLayout allow="pharmacien" title="Pharmacie & délivrance (simulation)">
       <div className="rounded-3xl border bg-card p-7">
@@ -67,11 +89,21 @@ function PharmacienHome() {
             </h3>
             <p className="text-sm text-muted-foreground">Consultation du stock (édition réservée à l'admin)</p>
           </div>
-          {lowStock.length > 0 && (
-            <span className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-amber-500/10 text-amber-700 border border-amber-500/20">
-              <AlertTriangle className="size-4" /> {lowStock.length} alerte(s)
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {lowStock.length > 0 && (
+              <span className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                <AlertTriangle className="size-4" /> {lowStock.length} alerte(s)
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => void runAdvice()}
+              disabled={aiLoading}
+              className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border hover:bg-muted disabled:opacity-60"
+            >
+              <Sparkles className="size-4 text-[color:var(--mint)]" /> IA: Recommander
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -83,6 +115,13 @@ function PharmacienHome() {
         {loading && (
           <p className="text-center text-muted-foreground mt-10">Chargement...</p>
         )}
+
+        {advice ? (
+          <div className="mt-6 rounded-2xl border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
+            <p className="font-semibold text-[color:var(--navy)] mb-2">Recommandations IA</p>
+            {advice}
+          </div>
+        ) : null}
 
         <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {meds.slice(0, 9).map((m) => (

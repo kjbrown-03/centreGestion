@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { getSupabaseAsync } from "@/lib/supabase";
+import { hasGemini, suggestTreatment } from "@/lib/ai";
 
 export const Route = createFileRoute("/medecin")({ component: MedecinHome });
 
@@ -91,12 +92,15 @@ function MedecinHome() {
   const [symptoms, setSymptoms] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
   const [notes, setNotes] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState("");
 
   const [selectedConsultationId, setSelectedConsultationId] = useState<string>("");
   const [prescItems, setPrescItems] = useState<
     { medicine_name: string; dosage: string; frequency: string; duration: string }[]
   >([{ medicine_name: "", dosage: "", frequency: "", duration: "" }]);
   const [creatingPrescription, setCreatingPrescription] = useState(false);
+  const [medicineOptions, setMedicineOptions] = useState<string[]>([]);
 
   const [examType, setExamType] = useState("");
   const [examPriority, setExamPriority] = useState<"routine" | "urgent">("routine");
@@ -131,7 +135,7 @@ function MedecinHome() {
           .schema("app")
           .from("appointments")
           .select(
-            "id, scheduled_at, status, reason, patient:patients(id, first_name, last_name, phone)",
+            "id, scheduled_at, status, reason, patient:patient_id (id, first_name, last_name, phone)",
           )
           .eq("practitioner_id", authUser.id)
           .gte("scheduled_at", start)
@@ -150,6 +154,28 @@ function MedecinHome() {
     void run();
     return () => {
       mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const supabase = await getSupabaseAsync();
+        const { data, error } = await (supabase as any)
+          .schema("app")
+          .from("stock_items")
+          .select("name")
+          .eq("kind", "pharmacy")
+          .order("name", { ascending: true });
+        if (error) throw error;
+        if (alive) setMedicineOptions((data ?? []).map((r: any) => r.name as string));
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -255,6 +281,27 @@ function MedecinHome() {
       toast.error(err?.message ?? "Impossible de créer la consultation.");
     } finally {
       setCreatingConsultation(false);
+    }
+  }
+
+  async function runAiSuggestion() {
+    try {
+      if (!hasGemini()) {
+        toast.error("Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env pour activer l'assistant.");
+        return;
+      }
+      if (!chiefComplaint && !symptoms && !notes) {
+        toast.error("Renseigne motif/symptômes/notes pour une suggestion.");
+        return;
+      }
+      setAiLoading(true);
+      const text = await suggestTreatment({ chiefComplaint, symptoms, notes });
+      setAiSuggestion(text);
+      if (!diagnosis && text) setDiagnosis(text.split("\n").slice(0, 3).join(" \u2022 "));
+    } catch (err: any) {
+      toast.error(err?.message ?? "Assistant IA indisponible.");
+    } finally {
+      setAiLoading(false);
     }
   }
 
@@ -574,6 +621,19 @@ function MedecinHome() {
                         placeholder="Notes"
                         className="w-full min-h-20 rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
                       />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void runAiSuggestion()}
+                          disabled={aiLoading}
+                          className="rounded-2xl border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
+                        >
+                          IA: Suggérer traitement
+                        </button>
+                        {aiSuggestion ? (
+                          <span className="text-[10px] text-muted-foreground">Suggestion prête (voir champ Diagnostic)</span>
+                        ) : null}
+                      </div>
                       <button
                         type="button"
                         onClick={() => void createConsultation()}
@@ -590,16 +650,22 @@ function MedecinHome() {
                       </div>
                       {prescItems.map((it, idx) => (
                         <div key={idx} className="rounded-2xl border p-3 space-y-2">
-                          <input
+                          <select
                             value={it.medicine_name}
                             onChange={(e) =>
                               setPrescItems((prev) =>
                                 prev.map((p, i) => (i === idx ? { ...p, medicine_name: e.target.value } : p)),
                               )
                             }
-                            placeholder="Médicament"
                             className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
-                          />
+                          >
+                            <option value="">— Sélectionner un médicament —</option>
+                            {medicineOptions.map((n) => (
+                              <option key={n} value={n}>
+                                {n}
+                              </option>
+                            ))}
+                          </select>
                           <div className="grid grid-cols-2 gap-2">
                             <input
                               value={it.dosage}

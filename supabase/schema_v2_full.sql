@@ -141,6 +141,11 @@ create table if not exists app.patients (
   updated_at timestamptz not null default now()
 );
 
+-- Add blood group (if missing)
+do $$ begin
+  alter table app.patients add column blood_type text null check (blood_type in ('A+','A-','B+','B-','AB+','AB-','O+','O-'));
+exception when duplicate_column then null; end $$;
+
 create index if not exists patients_name_idx on app.patients (last_name, first_name);
 create index if not exists patients_phone_idx on app.patients (phone);
 
@@ -478,6 +483,10 @@ alter table app.invoices enable row level security;
 alter table app.invoice_items enable row level security;
 alter table app.payments enable row level security;
 alter table app.audit_logs enable row level security;
+-- enable RLS for messages (declared below)
+do $$ begin
+  alter table app.messages enable row level security;
+exception when undefined_table then null; end $$;
 
 -- profiles: self read, admin write
 drop policy if exists profiles_read_self on app.profiles;
@@ -523,6 +532,17 @@ for select using (
   )
 );
 
+-- patients: patient can read own record via patient_accounts mapping
+drop policy if exists patients_read_self on app.patients;
+create policy patients_read_self on app.patients
+for select using (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.patients.id
+  )
+);
+
 drop policy if exists patients_insert_staff on app.patients;
 create policy patients_insert_staff on app.patients
 for insert with check (app.has_any_role(array['admin','secretaire']::app.user_role[]));
@@ -536,6 +556,11 @@ with check (app.has_any_role(array['admin','secretaire']::app.user_role[]));
 drop policy if exists patient_accounts_admin_only on app.patient_accounts;
 create policy patient_accounts_admin_only on app.patient_accounts
 for all using (app.is_admin()) with check (app.is_admin());
+
+-- patient_accounts: patient can read own mapping
+drop policy if exists patient_accounts_read_self on app.patient_accounts;
+create policy patient_accounts_read_self on app.patient_accounts
+for select using (user_id = auth.uid());
 
 -- appointments: staff read; secretaire/admin insert; secretaire/medecin/admin update
 drop policy if exists appointments_read_staff on app.appointments;
@@ -556,6 +581,27 @@ drop policy if exists appointments_update_staff on app.appointments;
 create policy appointments_update_staff on app.appointments
 for update using (app.has_any_role(array['admin','secretaire','medecin']::app.user_role[]))
 with check (app.has_any_role(array['admin','secretaire','medecin']::app.user_role[]));
+
+-- appointments: patient can read/insert own
+drop policy if exists appointments_read_patient_self on app.appointments;
+create policy appointments_read_patient_self on app.appointments
+for select using (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.appointments.patient_id
+  )
+);
+
+drop policy if exists appointments_insert_patient_self on app.appointments;
+create policy appointments_insert_patient_self on app.appointments
+for insert with check (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.appointments.patient_id
+  )
+);
 
 -- consultations: read medecin/infirmier/directeur/admin; write medecin/admin
 drop policy if exists consultations_read_staff on app.consultations;
@@ -597,6 +643,17 @@ for select using (app.has_any_role(array['admin','pharmacien']::app.user_role[])
 create policy prescriptions_read_medecin_own on app.prescriptions
 for select using (app.has_role('medecin') and practitioner_id = auth.uid());
 
+-- prescriptions: patient can read own
+drop policy if exists prescriptions_read_patient_self on app.prescriptions;
+create policy prescriptions_read_patient_self on app.prescriptions
+for select using (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.prescriptions.patient_id
+  )
+);
+
 drop policy if exists prescriptions_insert_medecin on app.prescriptions;
 create policy prescriptions_insert_medecin on app.prescriptions
 for insert with check (app.has_any_role(array['admin','medecin']::app.user_role[]));
@@ -616,6 +673,19 @@ for select using (
     from app.prescriptions p
     where p.id = app.prescription_items.prescription_id
       and p.practitioner_id = auth.uid()
+  )
+);
+
+-- prescription_items: patient can read items of own prescriptions
+drop policy if exists prescription_items_read_patient_self on app.prescription_items;
+create policy prescription_items_read_patient_self on app.prescription_items
+for select using (
+  exists (
+    select 1
+    from app.prescriptions p
+    join app.patient_accounts pa on pa.patient_id = p.patient_id
+    where p.id = app.prescription_items.prescription_id
+      and pa.user_id = auth.uid()
   )
 );
 
@@ -643,6 +713,17 @@ for select using (app.has_any_role(array['admin','directeur']::app.user_role[]))
 create policy exam_orders_read_medecin_own on app.exam_orders
 for select using (app.has_role('medecin') and practitioner_id = auth.uid());
 
+-- exam_orders: patient can read own
+drop policy if exists exam_orders_read_patient_self on app.exam_orders;
+create policy exam_orders_read_patient_self on app.exam_orders
+for select using (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.exam_orders.patient_id
+  )
+);
+
 drop policy if exists exam_orders_insert_medecin on app.exam_orders;
 create policy exam_orders_insert_medecin on app.exam_orders
 for insert with check (app.has_any_role(array['admin','medecin']::app.user_role[]));
@@ -662,6 +743,19 @@ for select using (
     from app.exam_orders o
     where o.id = app.exam_results.order_id
       and o.practitioner_id = auth.uid()
+  )
+);
+
+-- exam_results: patient can read results of own orders
+drop policy if exists exam_results_read_patient_self on app.exam_results;
+create policy exam_results_read_patient_self on app.exam_results
+for select using (
+  exists (
+    select 1
+    from app.exam_orders o
+    join app.patient_accounts pa on pa.patient_id = o.patient_id
+    where o.id = app.exam_results.order_id
+      and pa.user_id = auth.uid()
   )
 );
 
@@ -696,10 +790,33 @@ drop policy if exists invoices_insert_finance on app.invoices;
 create policy invoices_insert_finance on app.invoices
 for insert with check (app.has_any_role(array['admin','secretaire','comptable']::app.user_role[]));
 
+-- invoices: patient can read own invoices
+drop policy if exists invoices_read_patient on app.invoices;
+create policy invoices_read_patient on app.invoices
+for select using (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.invoices.patient_id
+  )
+);
+
 drop policy if exists invoice_items_read_finance on app.invoice_items;
 create policy invoice_items_read_finance on app.invoice_items
 for select using (app.has_any_role(array['admin','comptable','secretaire','directeur']::app.user_role[]));
 
+-- invoice items: patient can read items of own invoices
+drop policy if exists invoice_items_read_patient on app.invoice_items;
+create policy invoice_items_read_patient on app.invoice_items
+for select using (
+  exists (
+    select 1
+    from app.invoices i
+    join app.patient_accounts pa on pa.patient_id = i.patient_id
+    where i.id = app.invoice_items.invoice_id
+      and pa.user_id = auth.uid()
+  )
+);
 drop policy if exists invoice_items_insert_finance on app.invoice_items;
 create policy invoice_items_insert_finance on app.invoice_items
 for insert with check (app.has_any_role(array['admin','secretaire','comptable']::app.user_role[]));
@@ -748,3 +865,58 @@ select
 from app.profiles;
 
 grant select on public.profiles to anon, authenticated;
+
+-- ===================== MESSAGES (PATIENT ↔ PRATICIEN/SECRÉTARIAT) =====================
+
+create table if not exists app.messages (
+  id uuid primary key default gen_random_uuid(),
+  patient_id uuid not null references app.patients(id) on delete cascade,
+  practitioner_id uuid null references app.profiles(user_id),
+  sender text not null check (sender in ('patient','praticien','secretaire','system')),
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists messages_patient_idx on app.messages(patient_id, created_at desc);
+create index if not exists messages_practitioner_idx on app.messages(practitioner_id, created_at desc);
+
+alter table app.messages enable row level security;
+
+-- messages: patient read/insert own
+drop policy if exists messages_read_patient on app.messages;
+create policy messages_read_patient on app.messages
+for select using (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.messages.patient_id
+  )
+);
+
+drop policy if exists messages_insert_patient on app.messages;
+create policy messages_insert_patient on app.messages
+for insert with check (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.messages.patient_id
+  ) and sender = 'patient'
+);
+
+-- messages: medecin read/insert for assigned practitioner
+drop policy if exists messages_read_medecin on app.messages;
+create policy messages_read_medecin on app.messages
+for select using (app.has_role('medecin') and practitioner_id = auth.uid());
+
+drop policy if exists messages_insert_medecin on app.messages;
+create policy messages_insert_medecin on app.messages
+for insert with check (app.has_role('medecin') and practitioner_id = auth.uid() and sender = 'praticien');
+
+-- messages: secretaire read/insert all (could be restricted later by service)
+drop policy if exists messages_read_secretaire on app.messages;
+create policy messages_read_secretaire on app.messages
+for select using (app.has_role('secretaire'));
+
+drop policy if exists messages_insert_secretaire on app.messages;
+create policy messages_insert_secretaire on app.messages
+for insert with check (app.has_role('secretaire') and sender = 'secretaire');

@@ -2,17 +2,129 @@ import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { FileText, CreditCard, Wallet, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
+import { getSupabaseAsync } from "@/lib/supabase";
+import { toast } from "sonner";
+import { hasGemini, financeDailySummary } from "@/lib/ai";
 
 export const Route = createFileRoute("/comptable")({ component: ComptableHome });
 
+function startOfTodayIso() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+function startOfTomorrowIso() {
+  const d = new Date();
+  d.setHours(24, 0, 0, 0);
+  return d.toISOString();
+}
+
+type Invoice = {
+  id: string;
+  invoice_no: string;
+  total: number;
+  created_at: string;
+  patient?: { first_name: string; last_name: string } | null;
+};
+type Payment = {
+  id: string;
+  amount: number;
+  method: string;
+  received_at: string;
+  invoice?: { invoice_no: string } | null;
+};
+
+function fmt(x: number) {
+  return new Intl.NumberFormat("fr-FR").format(x) + " XAF";
+}
+
 function ComptableHome() {
+  const [loading, setLoading] = useState(true);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [report, setReport] = useState<string>("");
+
+  const todayStart = useMemo(() => startOfTodayIso(), []);
+  const tomorrowStart = useMemo(() => startOfTomorrowIso(), []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const supabase = await getSupabaseAsync();
+        const sb: any = supabase;
+        const [inv, pay] = await Promise.all([
+          sb
+            .schema("app")
+            .from("invoices")
+            .select(`id, invoice_no, total, created_at, patient:patient_id (first_name, last_name)`) 
+            .gte("created_at", todayStart)
+            .lt("created_at", tomorrowStart)
+            .order("created_at", { ascending: false }),
+          sb
+            .schema("app")
+            .from("payments")
+            .select(`id, amount, method, received_at, invoice:invoice_id (invoice_no)`)
+            .gte("received_at", todayStart)
+            .lt("received_at", tomorrowStart)
+            .order("received_at", { ascending: false }),
+        ]);
+        if (inv.error) throw inv.error;
+        if (pay.error) throw pay.error;
+        if (alive) {
+          setInvoices((inv.data ?? []) as any);
+          setPayments((pay.data ?? []) as any);
+        }
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [todayStart, tomorrowStart]);
+
+  const invoicesCount = invoices.length;
+  const paymentsSum = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+  const mobileMoneySum = payments
+    .filter((p) => p.method === "mobile_money")
+    .reduce((s, p) => s + Number(p.amount || 0), 0);
+  const outstanding = Math.max(
+    invoices.reduce((s, f) => s + Number(f.total || 0), 0) - paymentsSum,
+    0,
+  );
+
+  async function runReport() {
+    try {
+      if (!hasGemini()) {
+        toast.error("Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env et relancez.");
+        return;
+      }
+      setAiLoading(true);
+      const txt = await financeDailySummary({
+        invoicesCount,
+        paymentsSum: Math.round(paymentsSum),
+        outstanding: Math.round(outstanding),
+        mobileMoneySum: Math.round(mobileMoneySum),
+      });
+      setReport(txt);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Assistant IA indisponible.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   return (
-    <DashboardLayout allow="comptable" title="Facturation & paiements (simulation)">
+    <DashboardLayout allow="comptable" title="Facturation & paiements">
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatCard label="Factures du jour" value="18" icon={FileText} accent />
-        <StatCard label="Paiements encaissés" value="1 240 €" icon={Wallet} />
-        <StatCard label="Mobile Money" value="540 €" icon={CreditCard} />
-        <StatCard label="Reste à payer" value="180 €" icon={TrendingUp} />
+        <StatCard label="Factures du jour" value={loading ? "…" : String(invoicesCount)} icon={FileText} accent />
+        <StatCard label="Paiements encaissés" value={loading ? "…" : fmt(paymentsSum)} icon={Wallet} />
+        <StatCard label="Mobile Money" value={loading ? "…" : fmt(mobileMoneySum)} icon={CreditCard} />
+        <StatCard label="Reste à payer" value={loading ? "…" : fmt(outstanding)} icon={TrendingUp} />
       </div>
 
       <div className="mt-8 grid lg:grid-cols-3 gap-6">
@@ -21,22 +133,18 @@ function ComptableHome() {
           animate={{ opacity: 1, y: 0 }}
           className="lg:col-span-2 rounded-3xl border bg-card p-7"
         >
-          <h3 className="text-lg font-bold text-[color:var(--navy)]">Dernières opérations</h3>
+          <h3 className="text-lg font-bold text-[color:var(--navy)]">Derniers paiements</h3>
           <div className="mt-5 space-y-2">
-            {[
-              { id: "F-2026-051", patient: "Mariam Touré", amount: "45 €", mode: "Espèces" },
-              { id: "F-2026-052", patient: "Jean Dubois", amount: "60 €", mode: "Mobile Money" },
-              { id: "F-2026-053", patient: "Sophie Lemaire", amount: "30 €", mode: "Carte" },
-            ].map((x) => (
+            {(loading ? [] : payments).map((x) => (
               <div
                 key={x.id}
                 className="flex items-center justify-between gap-4 p-4 rounded-2xl border bg-muted/20"
               >
                 <div>
-                  <p className="font-semibold text-[color:var(--navy)]">{x.id} — {x.patient}</p>
-                  <p className="text-xs text-muted-foreground">Mode: {x.mode}</p>
+                  <p className="font-semibold text-[color:var(--navy)]">{x.invoice?.invoice_no ?? "—"}</p>
+                  <p className="text-xs text-muted-foreground">Mode: {x.method}</p>
                 </div>
-                <p className="text-sm font-bold text-[color:var(--navy)]">{x.amount}</p>
+                <p className="text-sm font-bold text-[color:var(--navy)]">{fmt(Number(x.amount || 0))}</p>
               </div>
             ))}
           </div>
@@ -49,12 +157,12 @@ function ComptableHome() {
           className="rounded-3xl gradient-hero p-7 text-white"
         >
           <h3 className="text-lg font-bold">Rapport synthétique</h3>
-          <p className="text-white/70 text-sm">Simulation de reporting</p>
+          <p className="text-white/70 text-sm">Journée en cours</p>
           <div className="mt-6 space-y-3">
             {[
-              { label: "Tickets moyens", value: "52 €" },
-              { label: "Taux d'impayés", value: "3%" },
-              { label: "Encaissement/heure", value: "155 €" },
+              { label: "Montant moyen/facture", value: invoicesCount ? fmt(Math.round((invoices.reduce((s,f)=>s+Number(f.total||0),0))/invoicesCount)) : "—" },
+              { label: "Paiement moyen", value: payments.length ? fmt(Math.round(paymentsSum/payments.length)) : "—" },
+              { label: "Part Mobile Money", value: paymentsSum ? Math.round((mobileMoneySum/paymentsSum)*100)+"%" : "—" },
             ].map((k) => (
               <div key={k.label} className="rounded-xl glass-dark p-4 flex items-center justify-between">
                 <p className="text-sm text-white/80">{k.label}</p>
@@ -62,6 +170,19 @@ function ComptableHome() {
               </div>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={() => void runReport()}
+            disabled={aiLoading}
+            className="mt-6 w-full rounded-2xl bg-white/10 hover:bg-white/15 text-white font-semibold py-3 border border-white/20 disabled:opacity-60"
+          >
+            IA: Générer le résumé du jour
+          </button>
+          {report ? (
+            <div className="mt-4 rounded-2xl bg-white/5 border border-white/15 p-4 text-sm whitespace-pre-wrap">
+              {report}
+            </div>
+          ) : null}
         </motion.div>
       </div>
     </DashboardLayout>

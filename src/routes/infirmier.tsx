@@ -2,6 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { HeartPulse, Activity, Syringe, Thermometer, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
+import { useState } from "react";
+import { toast } from "sonner";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const Route = createFileRoute("/infirmier")({ component: InfirmierHome });
 
@@ -14,6 +17,33 @@ const tasks = [
 ];
 
 function InfirmierHome() {
+  const apiKey = (import.meta as any)?.env?.VITE_GEMINI_API_KEY as string | undefined;
+  const [aiLoading, setAiLoading] = useState(false as boolean);
+  const [tips, setTips] = useState("");
+
+  async function runAi() {
+    try {
+      if (!apiKey) {
+        toast.error("Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env et relancez.");
+        return;
+      }
+      setAiLoading(true);
+      const gen = new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: "gemini-1.5-flash" });
+      const list = tasks.map((t) => `- ${t.time} ${t.act}${t.urgent ? " (urgent)" : ""}`).join("\n");
+      const prompt = [
+        "Assistant infirmier: priorise les soins du jour, signale les patients à risque, et rappelle les médicaments à l'heure.",
+        "Réponds en puces courtes (4-6).",
+        list,
+      ].join("\n");
+      const res = await gen.generateContent(prompt);
+      setTips(res.response.text().trim());
+    } catch (err: any) {
+      toast.error(err?.message ?? "Assistant IA indisponible.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   return (
     <DashboardLayout allow="infirmier" title="Soins du jour">
       <div className="grid sm:grid-cols-4 gap-5">
@@ -26,6 +56,16 @@ function InfirmierHome() {
       <div className="mt-8 grid lg:grid-cols-3 gap-6">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="lg:col-span-2 rounded-3xl border bg-card p-7">
           <h3 className="text-lg font-bold text-[color:var(--navy)]">Planning de soins</h3>
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => void runAi()}
+              disabled={aiLoading}
+              className="rounded-2xl border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
+            >
+              IA: Prioriser les soins
+            </button>
+          </div>
           <div className="mt-5 space-y-2">
             {tasks.map((t, i) => (
               <motion.div
@@ -54,6 +94,11 @@ function InfirmierHome() {
           <Thermometer className="size-6 text-[color:var(--mint)]" />
           <h3 className="mt-3 text-lg font-bold">Constantes critiques</h3>
           <p className="text-white/70 text-sm">Patients sous surveillance</p>
+          {tips ? (
+            <div className="mt-4 rounded-2xl glass-dark p-4 text-xs whitespace-pre-wrap">
+              {tips}
+            </div>
+          ) : null}
           <div className="mt-5 space-y-3">
             {[
               { name: "Mme. Bernard", v: "TA 160/95", color: "text-amber-300" },
