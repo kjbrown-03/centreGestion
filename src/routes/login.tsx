@@ -335,8 +335,8 @@ function Login() {
                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <input
                       type="email"
-                      value={regEmail}
-                      onChange={(e) => setRegEmail(e.target.value)}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       placeholder="nom@exemple.com"
                       className="w-full rounded-2xl border bg-card pl-11 pr-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
                       required

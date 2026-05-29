@@ -1,10 +1,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts";
 
 type CreateUserBody = {
   email: string;
   role: string;
   full_name: string;
+  first_name?: string;
+  last_name?: string;
+  sex?: string;
+  birth_date?: string;
+  blood_type?: string;
 };
 
 function json(status: number, payload: unknown) {
@@ -16,22 +20,6 @@ function json(status: number, payload: unknown) {
       "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     },
   });
-}
-
-function generatePassword(length = 14) {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const specials = "@#$%";
-  const all = alphabet + specials;
-  const bytes = crypto.getRandomValues(new Uint8Array(length));
-  let out = "";
-  for (let i = 0; i < bytes.length; i++) {
-    out += all[bytes[i] % all.length];
-  }
-  // ensure at least one special
-  if (![...out].some((c) => specials.includes(c))) {
-    out = out.slice(0, -1) + specials[bytes[0] % specials.length];
-  }
-  return out;
 }
 
 Deno.serve(async (req) => {
@@ -69,8 +57,6 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
       Deno.env.get("SUPABASE_FUNCTION_SERVICE_ROLE_KEY") ??
       "";
-    const gmailUser = Deno.env.get("GMAIL_USER") ?? "";
-    const gmailAppPassword = Deno.env.get("GMAIL_APP_PASSWORD") ?? "";
 
     if (!url || !anonKey || !serviceRoleKey) {
       return json(500, {
@@ -105,82 +91,41 @@ Deno.serve(async (req) => {
     const email = (body.email ?? "").trim().toLowerCase();
     const role = (body.role ?? "").trim();
     const full_name = (body.full_name ?? "").trim();
+    const first_name = (body.first_name ?? "").trim();
+    const last_name = (body.last_name ?? "").trim();
+    const sex = (body.sex ?? "").trim();
+    const birth_date = (body.birth_date ?? "").trim();
+    const blood_type = (body.blood_type ?? "").trim();
 
     if (!email || !role || !full_name) {
       return json(400, { error: "Missing email/role/full_name" });
     }
 
-    const password = generatePassword();
-
     const adminClient = createClient(url, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
-    const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        role,
-        full_name,
-      },
+    const userMetadata = {
+      role,
+      full_name,
+      first_name,
+      last_name,
+      sex,
+      birth_date,
+      blood_type,
+    } as Record<string, unknown>;
+
+    const { data: invited, error: inviteErr } = await adminClient.auth.admin.inviteUserByEmail(email, {
+      data: userMetadata,
     });
 
-    if (createErr) return json(400, { error: createErr.message });
-
-    let emailSent = false;
-    let emailError: string | null = null;
-
-    if (gmailUser && gmailAppPassword) {
-      try {
-        const client = new SmtpClient();
-        await client.connectTLS({
-          hostname: "smtp.gmail.com",
-          port: 465,
-          username: gmailUser,
-          password: gmailAppPassword,
-        });
-
-        const frenchRole =
-          role === "admin"
-            ? "Administrateur"
-            : role === "medecin"
-            ? "Médecin"
-            : role === "infirmier"
-            ? "Infirmier"
-            : role === "pharmacien"
-            ? "Pharmacien"
-            : role === "secretaire"
-            ? "Secrétaire"
-            : role === "comptable"
-            ? "Comptable"
-            : role === "directeur"
-            ? "Directeur"
-            : role;
-
-        await client.send({
-          from: gmailUser,
-          to: email,
-          subject: "[Centre de Santé] Création de votre compte",
-          content: `Bonjour ${full_name},\n\nUn compte a été créé pour vous sur l'application de Gestion du Centre de Santé avec le rôle : ${frenchRole}.\n\nVoici vos identifiants de connexion :\n- Email : ${email}\n- Mot de passe : ${password}\n\nPour des raisons de sécurité, nous vous conseillons de modifier votre mot de passe dès votre première connexion.\n\nCordialement,\nL'administration du Centre de Santé`,
-        });
-
-        await client.close();
-        emailSent = true;
-      } catch (err: any) {
-        console.error("Failed to send email via SMTP:", err);
-        emailError = err?.message ?? String(err);
-      }
-    } else {
-      console.warn("Gmail SMTP credentials missing. Skipping email send.");
-      emailError = "SMTP credentials missing";
-    }
+    if (inviteErr) return json(400, { error: inviteErr.message });
 
     return json(200, {
-      user: { id: created.user?.id, email: created.user?.email },
-      password,
-      emailSent,
-      emailError,
+      user: { id: invited.user?.id ?? null, email: invited.user?.email ?? email },
+      invited: true,
+      emailSent: true,
+      emailError: null,
     });
   } catch (e) {
     return json(500, { error: (e as any)?.message ?? "Unknown error" });

@@ -58,26 +58,26 @@ for each row execute function app.set_updated_at();
 
 create or replace function app.is_admin() returns boolean
 language sql stable as $$
-  select exists (
-    select 1 from app.profiles p
-    where p.user_id = auth.uid() and p.role = 'admin'
-  );
+  select coalesce(
+    nullif((current_setting('request.jwt.claims', true)::jsonb -> 'user_metadata' ->> 'role'), '')::app.user_role,
+    'patient'::app.user_role
+  ) = 'admin'::app.user_role;
 $$;
 
 create or replace function app.has_role(r app.user_role) returns boolean
 language sql stable as $$
-  select exists (
-    select 1 from app.profiles p
-    where p.user_id = auth.uid() and p.role = r
-  );
+  select coalesce(
+    nullif((current_setting('request.jwt.claims', true)::jsonb -> 'user_metadata' ->> 'role'), '')::app.user_role,
+    'patient'::app.user_role
+  ) = r;
 $$;
 
 create or replace function app.has_any_role(roles app.user_role[]) returns boolean
 language sql stable as $$
-  select exists (
-    select 1 from app.profiles p
-    where p.user_id = auth.uid() and p.role = any(roles)
-  );
+  select coalesce(
+    nullif((current_setting('request.jwt.claims', true)::jsonb -> 'user_metadata' ->> 'role'), '')::app.user_role,
+    'patient'::app.user_role
+  ) = any(roles);
 $$;
 
 -- Auto-create profile on signup

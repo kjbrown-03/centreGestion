@@ -13,7 +13,7 @@ type RoleId = (typeof ROLES)[number]["id"];
 
 type CreateUserResponse = {
   user: { id: string | null; email: string | null };
-  password: string;
+  invited?: boolean;
   emailSent?: boolean;
   emailError?: string | null;
 };
@@ -30,9 +30,6 @@ function AdminUsers() {
   const [bloodType, setBloodType] = useState("");
   const [patientSex, setPatientSex] = useState("");
   const [patientBirthDate, setPatientBirthDate] = useState("");
-
-  const [createdPassword, setCreatedPassword] = useState<string | null>(null);
-  const [createdEmail, setCreatedEmail] = useState<string | null>(null);
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
@@ -66,50 +63,27 @@ function AdminUsers() {
           email: cleanEmail,
           role,
           full_name: cleanName,
+          // pass patient metadata so the trigger can create the record on invite
+          first_name: role === "patient" ? patientFirstName.trim() : undefined,
+          last_name: role === "patient" ? patientLastName.trim() : undefined,
+          sex: role === "patient" ? patientSex : undefined,
+          birth_date: role === "patient" ? patientBirthDate : undefined,
+          blood_type: role === "patient" ? bloodType : undefined,
         },
       });
 
       if (error) throw error;
-      if (!data?.password) throw new Error("Réponse invalide.");
-
-      setCreatedEmail(cleanEmail);
-      setCreatedPassword(data.password);
+      if (!data?.user) throw new Error("Réponse invalide.");
 
       if (data.emailSent) {
-        toast.success("Utilisateur créé et email envoyé !");
+        toast.success(`Invitation envoyée à ${cleanEmail}.`);
       } else {
         toast.warning(
-          `Utilisateur créé mais l'email n'a pas pu être envoyé: ${data.emailError || "Erreur SMTP unknown"}`
+          `Utilisateur créé mais l'invitation n'a pas pu être envoyée: ${data.emailError || "erreur inconnue"}`
         );
       }
 
-      // If this is a patient, create patient record and link
-      if (role === "patient") {
-        const userId = data?.user?.id;
-        if (!userId) throw new Error("ID utilisateur manquant pour la création patient.");
-        const supabase = await getSupabaseAsync();
-        const sb: any = supabase;
-        const { data: pIns, error: pErr } = await sb
-          .schema("app")
-          .from("patients")
-          .insert({
-            first_name: patientFirstName.trim(),
-            last_name: patientLastName.trim(),
-            blood_type: bloodType,
-            sex: patientSex,
-            birth_date: patientBirthDate,
-          })
-          .select("id")
-          .single();
-        if (pErr) throw pErr;
-        const pid = pIns.id as string;
-        const { error: linkErr } = await sb
-          .schema("app")
-          .from("patient_accounts")
-          .insert({ user_id: userId, patient_id: pid });
-        if (linkErr) throw linkErr;
-        toast.success("Fiche patient créée et liée.");
-      }
+      // Patient record/link is now handled by the DB trigger using user_metadata on invite.
 
       setEmail("");
       setFullName("");
@@ -131,9 +105,7 @@ function AdminUsers() {
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="rounded-3xl border bg-card p-7">
           <h3 className="text-lg font-bold text-[color:var(--navy)]">Créer un utilisateur</h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Un mot de passe est généré automatiquement. Communique-le à l'utilisateur.
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">Une invitation est envoyée par email pour définir le mot de passe.</p>
 
           <form onSubmit={createUser} className="mt-6 space-y-4">
             <div className="space-y-1.5">
@@ -252,39 +224,10 @@ function AdminUsers() {
         </div>
 
         <div className="rounded-3xl border bg-card p-7">
-          <h3 className="text-lg font-bold text-[color:var(--navy)]">Mot de passe généré</h3>
-          <p className="text-sm text-muted-foreground mt-1">Le mot de passe s’affiche une seule fois ici.</p>
-
-          {createdPassword ? (
-            <div className="mt-6 space-y-3">
-              <div className="rounded-2xl border bg-muted/30 p-4">
-                <p className="text-xs text-muted-foreground">Utilisateur</p>
-                <p className="text-sm font-semibold text-[color:var(--navy)] break-all">{createdEmail}</p>
-              </div>
-              <div className="rounded-2xl border bg-muted/30 p-4">
-                <p className="text-xs text-muted-foreground">Mot de passe</p>
-                <p className="text-sm font-mono font-semibold text-[color:var(--navy)] break-all">{createdPassword}</p>
-              </div>
-              <button
-                type="button"
-                className="w-full rounded-2xl border py-3 text-sm font-semibold hover:bg-muted"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(createdPassword);
-                    toast.success("Mot de passe copié.");
-                  } catch {
-                    toast.error("Impossible de copier.");
-                  }
-                }}
-              >
-                Copier le mot de passe
-              </button>
-            </div>
-          ) : (
-            <div className="mt-6 rounded-2xl border bg-muted/30 p-6 text-sm text-muted-foreground">
-              Crée un utilisateur pour voir le mot de passe ici.
-            </div>
-          )}
+          <h3 className="text-lg font-bold text-[color:var(--navy)]">Invitations</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Les utilisateurs recevront un email d’invitation pour définir leur mot de passe. Aucun mot de passe n’est affiché ici.
+          </p>
         </div>
       </div>
 

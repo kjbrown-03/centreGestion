@@ -72,7 +72,7 @@ function PatientDashboard() {
           .schema("app")
           .from("patient_accounts")
           .select(
-            "patient_id, patient:patient_id (id, first_name, last_name, birth_date, phone, allergies, chronic_conditions)"
+            "patient_id, patient:patient_id (id, first_name, last_name, birth_date, blood_type, phone, allergies, chronic_conditions)"
           )
           .eq("user_id", user.id)
           .single();
