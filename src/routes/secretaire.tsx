@@ -114,7 +114,15 @@ function SecretaireHome() {
         .from("appointments")
         .update({ practitioner_id, status: "confirme" })
         .eq("id", apptId);
-      if (error) throw error;
+      if (error) {
+        // Contrainte d'unicité: un médecin ne peut pas avoir 2 RDV au même horaire
+        const msg: string = (error as any)?.message ?? "Mise à jour impossible.";
+        if (msg.toLowerCase().includes("unique") || msg.includes("appointments_unique_practitioner_time")) {
+          toast.error("Ce médecin a déjà un rendez-vous à cette heure.");
+          return;
+        }
+        throw error;
+      }
       toast.success("Rendez-vous confirmé et assigné.");
       // refresh list
       const { data, error: rErr } = await sb

@@ -13,7 +13,7 @@ type RoleId = (typeof ROLES)[number]["id"];
 
 type CreateUserResponse = {
   user: { id: string | null; email: string | null };
-  invited?: boolean;
+  password: string;
   emailSent?: boolean;
   emailError?: string | null;
 };
@@ -30,6 +30,8 @@ function AdminUsers() {
   const [bloodType, setBloodType] = useState("");
   const [patientSex, setPatientSex] = useState("");
   const [patientBirthDate, setPatientBirthDate] = useState("");
+  const [createdPassword, setCreatedPassword] = useState<string | null>(null);
+  const [createdEmail, setCreatedEmail] = useState<string | null>(null);
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
@@ -73,17 +75,20 @@ function AdminUsers() {
       });
 
       if (error) throw error;
-      if (!data?.user) throw new Error("Réponse invalide.");
+      if (!data?.password) throw new Error("Réponse invalide.");
+
+      setCreatedEmail(cleanEmail);
+      setCreatedPassword(data.password);
 
       if (data.emailSent) {
-        toast.success(`Invitation envoyée à ${cleanEmail}.`);
+        toast.success("Utilisateur créé et email envoyé !");
       } else {
         toast.warning(
-          `Utilisateur créé mais l'invitation n'a pas pu être envoyée: ${data.emailError || "erreur inconnue"}`
+          `Utilisateur créé mais l'email n'a pas pu être envoyé: ${data.emailError || "Erreur SMTP unknown"}`
         );
       }
 
-      // Patient record/link is now handled by the DB trigger using user_metadata on invite.
+      // Patient record/link is handled by DB trigger using user_metadata on create.
 
       setEmail("");
       setFullName("");
@@ -100,12 +105,229 @@ function AdminUsers() {
     }
   }
 
+type ProfileRow = { user_id: string; role: RoleId; full_name: string };
+
+function ManageUsersSection() {
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<ProfileRow[]>([]);
+  const [q, setQ] = useState("");
+  const [role, setRole] = useState<RoleId | "">("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(() => {
+      (async () => {
+        setLoading(true);
+        try {
+          const supabase = await getSupabaseAsync();
+          let qb: any = supabase.from("profiles").select("user_id, full_name, role").order("full_name");
+          if (q.trim()) qb = qb.ilike("full_name", `%${q.trim()}%`);
+          if (role) qb = qb.eq("role", role);
+          const { data, error } = await qb;
+          if (error) throw error;
+          if (!alive) return;
+          setRows((data ?? []) as any);
+        } catch (e: any) {
+          if (alive) toast.error(e?.message ?? "Chargement impossible.");
+        } finally {
+          if (alive) setLoading(false);
+        }
+      })();
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [q, role]);
+
+  async function saveRow(r: ProfileRow) {
+    setSavingId(r.user_id);
+    try {
+      const supabase = await getSupabaseAsync();
+      const { error } = await supabase.from("profiles").update({ full_name: r.full_name, role: r.role }).eq("user_id", r.user_id);
+      if (error) throw error;
+      toast.success("Modifications enregistrées.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Échec de la sauvegarde.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function resetPassword(user_id: string) {
+    setActionMsg(null);
+    try {
+      const supabase = await getSupabaseAsync();
+      const { data, error } = await supabase.functions.invoke("admin-manage-user", {
+        body: { op: "reset_password", user_id },
+      });
+      if (error) throw error;
+      const pwd = (data as any)?.password as string | undefined;
+      if (!pwd) throw new Error("Réponse invalide");
+      setActionMsg(`Nouveau mot de passe: ${pwd}`);
+      toast.success("Mot de passe réinitialisé.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Échec de la réinitialisation.");
+    }
+  }
+
+  async function deleteUser(user_id: string) {
+    if (!confirm("Supprimer cet utilisateur ?")) return;
+    try {
+      const supabase = await getSupabaseAsync();
+      await supabase.schema("app").from("patient_accounts").delete().eq("user_id", user_id);
+      await supabase.from("profiles").delete().eq("user_id", user_id);
+      const { error } = await supabase.functions.invoke("admin-manage-user", { body: { op: "delete_user", user_id } });
+      if (error) throw error;
+      setRows((prev) => prev.filter((x) => x.user_id !== user_id));
+      toast.success("Utilisateur supprimé.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Suppression impossible.");
+    }
+  }
+
+  return (
+    <div className="mt-8 rounded-3xl border bg-card p-7">
+      <h3 className="text-lg font-bold text-[color:var(--navy)]">Gérer les utilisateurs</h3>
+      <div className="mt-4 grid sm:grid-cols-3 gap-3">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Rechercher par nom…"
+          className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
+        />
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as RoleId | "")}
+          className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
+        >
+          <option value="">Tous les rôles</option>
+          {ROLES.map((r) => (
+            <option key={r.id} value={r.id}>{r.label}</option>
+          ))}
+        </select>
+        <div className="text-sm text-muted-foreground flex items-center">{loading ? "Chargement…" : `${rows.length} utilisateur(s)`}</div>
+      </div>
+
+      {actionMsg && (
+        <div className="mt-4 rounded-2xl border bg-muted/30 p-4 text-sm break-all">{actionMsg}</div>
+      )}
+
+      <div className="mt-4 space-y-3">
+        {(rows ?? []).map((r) => (
+          <div key={r.user_id} className="rounded-2xl border p-4 bg-muted/20 grid md:grid-cols-4 gap-3 items-center">
+            <input
+              value={r.full_name}
+              onChange={(e) => {
+                const v = e.target.value;
+                setRows((prev) => prev.map((x) => (x.user_id === r.user_id ? { ...x, full_name: v } : x)));
+              }}
+              className="rounded-xl border bg-background px-3 py-2 text-sm outline-none"
+            />
+            <select
+              value={r.role}
+              onChange={(e) => {
+                const v = e.target.value as RoleId;
+                setRows((prev) => prev.map((x) => (x.user_id === r.user_id ? { ...x, role: v } : x)));
+              }}
+              className="rounded-xl border bg-background px-3 py-2 text-sm outline-none"
+            >
+              {ROLES.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={savingId === r.user_id}
+                onClick={() => void saveRow(r)}
+                className="rounded-xl border px-3 py-2 text-sm hover:bg-muted disabled:opacity-60"
+              >
+                Enregistrer
+              </button>
+              <button
+                type="button"
+                onClick={() => void resetPassword(r.user_id)}
+                className="rounded-xl border px-3 py-2 text-sm hover:bg-muted"
+              >
+                Réinit. MDP
+              </button>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => void deleteUser(r.user_id)}
+                className="rounded-xl border px-3 py-2 text-sm hover:bg-muted text-red-600 border-red-200"
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SeedUsersSection() {
+  const [count, setCount] = useState(5);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function seed() {
+    if (!confirm("Créer des utilisateurs de démonstration (5 par rôle) ?")) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const supabase = await getSupabaseAsync();
+      const { data, error } = await supabase.functions.invoke("admin-manage-user", { body: { op: "seed", perRole: count } });
+      if (error) throw error;
+      setResult(JSON.stringify(data));
+      toast.success("Création terminée.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Échec de création.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mt-8 rounded-3xl border bg-card p-7">
+      <h3 className="text-lg font-bold text-[color:var(--navy)]">Créer des utilisateurs par rôle</h3>
+      <p className="text-sm text-muted-foreground mt-1">Crée des comptes de démonstration pour augmenter le volume.</p>
+      <div className="mt-4 flex items-center gap-3">
+        <input
+          type="number"
+          min={1}
+          max={50}
+          value={count}
+          onChange={(e) => setCount(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+          className="w-28 rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
+        />
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void seed()}
+          className="rounded-2xl gradient-mint text-[color:var(--navy)] font-semibold px-4 py-2.5 disabled:opacity-60"
+        >
+          Lancer
+        </button>
+      </div>
+      {result && <div className="mt-4 rounded-2xl border bg-muted/30 p-4 text-xs break-all">{result}</div>}
+    </div>
+  );
+}
+
   return (
     <DashboardLayout allow="admin" title="Utilisateurs">
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="rounded-3xl border bg-card p-7">
           <h3 className="text-lg font-bold text-[color:var(--navy)]">Créer un utilisateur</h3>
-          <p className="text-sm text-muted-foreground mt-1">Une invitation est envoyée par email pour définir le mot de passe.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Un mot de passe est généré automatiquement. Communique-le à l'utilisateur.
+          </p>
 
           <form onSubmit={createUser} className="mt-6 space-y-4">
             <div className="space-y-1.5">
@@ -224,14 +446,46 @@ function AdminUsers() {
         </div>
 
         <div className="rounded-3xl border bg-card p-7">
-          <h3 className="text-lg font-bold text-[color:var(--navy)]">Invitations</h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Les utilisateurs recevront un email d’invitation pour définir leur mot de passe. Aucun mot de passe n’est affiché ici.
-          </p>
+          <h3 className="text-lg font-bold text-[color:var(--navy)]">Mot de passe généré</h3>
+          <p className="text-sm text-muted-foreground mt-1">Le mot de passe s’affiche une seule fois ici.</p>
+
+          {createdPassword ? (
+            <div className="mt-6 space-y-3">
+              <div className="rounded-2xl border bg-muted/30 p-4">
+                <p className="text-xs text-muted-foreground">Utilisateur</p>
+                <p className="text-sm font-semibold text-[color:var(--navy)] break-all">{createdEmail}</p>
+              </div>
+              <div className="rounded-2xl border bg-muted/30 p-4">
+                <p className="text-xs text-muted-foreground">Mot de passe</p>
+                <p className="text-sm font-mono font-semibold text-[color:var(--navy)] break-all">{createdPassword}</p>
+              </div>
+              <button
+                type="button"
+                className="w-full rounded-2xl border py-3 text-sm font-semibold hover:bg-muted"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(createdPassword);
+                    toast.success("Mot de passe copié.");
+                  } catch {
+                    toast.error("Impossible de copier.");
+                  }
+                }}
+              >
+                Copier le mot de passe
+              </button>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-2xl border bg-muted/30 p-6 text-sm text-muted-foreground">
+              Crée un utilisateur pour voir le mot de passe ici.
+            </div>
+          )}
         </div>
       </div>
 
       <LinkUserPatientSection />
+
+      <ManageUsersSection />
+      <SeedUsersSection />
     </DashboardLayout>
   );
 }

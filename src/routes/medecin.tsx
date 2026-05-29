@@ -70,6 +70,13 @@ function startOfTomorrowIso() {
   return d.toISOString();
 }
 
+function startOfInDaysIso(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 function formatTime(iso: string) {
   const d = new Date(iso);
   const hh = d.getHours().toString().padStart(2, "0");
@@ -129,7 +136,7 @@ function MedecinHome() {
         }
 
         const start = startOfTodayIso();
-        const end = startOfTomorrowIso();
+        const end = startOfInDaysIso(7);
 
         const { data, error } = await (supabase as any)
           .schema("app")

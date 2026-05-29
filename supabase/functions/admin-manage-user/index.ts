@@ -1,16 +1,22 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Deno global for TS
 declare const Deno: any;
 
-type CreateUserBody = {
-  email: string;
-  role: string;
-  full_name: string;
-  first_name?: string;
-  last_name?: string;
-  sex?: string;
-  birth_date?: string;
-  blood_type?: string;
+type ManageBody = {
+  op: "reset_password" | "delete_user" | "seed";
+  user_id?: string;
+  perRole?: number;
 };
+
+type RoleId =
+  | "admin"
+  | "medecin"
+  | "infirmier"
+  | "secretaire"
+  | "comptable"
+  | "pharmacien"
+  | "directeur"
+  | "patient";
 
 function json(status: number, payload: unknown) {
   return new Response(JSON.stringify(payload), {
@@ -55,9 +61,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Supabase Dashboard forbids user-created secrets starting with SUPABASE_.
-    // SUPABASE_URL / SUPABASE_ANON_KEY are usually injected by the platform automatically.
-    // For custom secrets, use URL / ANON_KEY / SERVICE_ROLE_KEY (or legacy names).
     const url =
       Deno.env.get("SUPABASE_URL") ??
       Deno.env.get("URL") ??
@@ -103,55 +106,87 @@ Deno.serve(async (req: Request) => {
     if (profileErr) return json(403, { error: profileErr.message });
     if (profile?.role !== "admin") return json(403, { error: "Admin only" });
 
-    const body = (await req.json()) as Partial<CreateUserBody>;
-    const email = (body.email ?? "").trim().toLowerCase();
-    const role = (body.role ?? "").trim();
-    const full_name = (body.full_name ?? "").trim();
-    const first_name = (body.first_name ?? "").trim();
-    const last_name = (body.last_name ?? "").trim();
-    const sex = (body.sex ?? "").trim();
-    const birth_date = (body.birth_date ?? "").trim();
-    const blood_type = (body.blood_type ?? "").trim();
-
-    if (!email || !role || !full_name) {
-      return json(400, { error: "Missing email/role/full_name" });
-    }
+    const body = (await req.json()) as Partial<ManageBody>;
+    const op = body.op;
 
     const adminClient = createClient(url, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
-    const userMetadata = {
-      role,
-      full_name,
-      first_name,
-      last_name,
-      sex,
-      birth_date,
-      blood_type,
-    } as Record<string, unknown>;
+    if (op === "reset_password") {
+      const user_id = (body.user_id ?? "").trim();
+      if (!user_id) return json(400, { error: "Missing user_id" });
+      const password = generatePassword();
+      const { error } = await adminClient.auth.admin.updateUserById(user_id, { password });
+      if (error) return json(400, { error: error.message });
+      return json(200, { password });
+    }
 
-    const password = generatePassword();
+    if (op === "delete_user") {
+      const user_id = (body.user_id ?? "").trim();
+      if (!user_id) return json(400, { error: "Missing user_id" });
 
-    const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: userMetadata,
-    });
+      // Best-effort cleanup of linking rows; ignore errors
+      try {
+        await (adminClient as any).schema("app").from("patient_accounts").delete().eq("user_id", user_id);
+        await (adminClient as any).schema("app").from("profiles").delete().eq("user_id", user_id);
+      } catch {}
 
-    if (createErr) return json(400, { error: createErr.message });
+      const { error } = await adminClient.auth.admin.deleteUser(user_id);
+      if (error) return json(400, { error: error.message });
+      return json(200, { ok: true });
+    }
 
-    const emailSent = false;
-    const emailError: string | null =
-      "Email non envoyé (SMTP non supporté sur Edge). Communiquez le mot de passe affiché dans l'Admin ou configurez Auth > Email + invitations.";
+    if (op === "seed") {
+      const perRole = Math.max(1, Math.min(100, Number(body.perRole ?? 5)));
+      const roles: RoleId[] = [
+        "admin",
+        "medecin",
+        "infirmier",
+        "secretaire",
+        "comptable",
+        "pharmacien",
+        "directeur",
+        "patient",
+      ];
 
-    return json(200, {
-      user: { id: created.user?.id ?? null, email: created.user?.email ?? email },
-      password,
-      emailSent,
-      emailError,
-    });
+      const results: Array<{ id: string | null; email: string; password: string; role: RoleId }> = [];
+      const ts = Date.now();
+
+      for (const r of roles) {
+        for (let i = 0; i < perRole; i++) {
+          const rnd = Math.random().toString(36).slice(2, 8);
+          const email = `${r}.${i}.${ts}.${rnd}@example.com`;
+          const full_name = `Demo ${r.charAt(0).toUpperCase() + r.slice(1)} ${i + 1}`;
+          const password = generatePassword();
+
+          const user_metadata: Record<string, unknown> = { role: r, full_name };
+          if (r === "patient") {
+            const first = `Patient${i + 1}`;
+            const last = `Demo${i + 1}`;
+            user_metadata.first_name = first;
+            user_metadata.last_name = last;
+            user_metadata.sex = i % 2 === 0 ? "M" : "F";
+            user_metadata.birth_date = "1990-01-01";
+            user_metadata.blood_type = ["A+","A-","B+","B-","AB+","AB-","O+","O-"][i % 8];
+          }
+
+          const { data, error } = await adminClient.auth.admin.createUser({
+            email,
+            password,
+            email_confirm: true,
+            user_metadata,
+          });
+          if (!error) {
+            results.push({ id: data.user?.id ?? null, email, password, role: r });
+          }
+        }
+      }
+
+      return json(200, { created: results.length, users: results.slice(0, 50) });
+    }
+
+    return json(400, { error: "Unknown op" });
   } catch (e) {
     return json(500, { error: (e as any)?.message ?? "Unknown error" });
   }
