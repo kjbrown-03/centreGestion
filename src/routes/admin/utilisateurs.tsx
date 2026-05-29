@@ -14,6 +14,8 @@ type RoleId = (typeof ROLES)[number]["id"];
 type CreateUserResponse = {
   user: { id: string | null; email: string | null };
   password: string;
+  emailSent?: boolean;
+  emailError?: string | null;
 };
 
 function AdminUsers() {
@@ -49,7 +51,14 @@ function AdminUsers() {
 
       setCreatedEmail(cleanEmail);
       setCreatedPassword(data.password);
-      toast.success("Utilisateur créé.");
+
+      if (data.emailSent) {
+        toast.success("Utilisateur créé et email envoyé !");
+      } else {
+        toast.warning(
+          `Utilisateur créé mais l'email n'a pas pu être envoyé: ${data.emailError || "Erreur SMTP unknown"}`
+        );
+      }
 
       setEmail("");
       setFullName("");

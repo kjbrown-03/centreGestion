@@ -93,16 +93,28 @@ export function DashboardLayout({
         const { data, error } = await sb
           .schema("app")
           .from("audit_logs")
-          .select("id, created_at, actor_email, action, target")
+          .select(`
+            id,
+            created_at,
+            action,
+            target_table,
+            actor_role,
+            profiles:actor_user_id (
+              full_name
+            )
+          `)
           .order("created_at", { ascending: false })
           .limit(20);
         if (error) throw error;
 
-        const mapped = (data ?? []).map((r: any) => ({
-          id: String(r.id),
-          at: String(r.created_at ?? ""),
-          text: `${r.actor_email ?? "—"} · ${r.action ?? ""}${r.target ? ` · ${r.target}` : ""}`,
-        }));
+        const mapped = (data ?? []).map((r: any) => {
+          const actorName = r.profiles?.full_name ?? r.actor_role ?? "Système";
+          return {
+            id: String(r.id),
+            at: String(r.created_at ?? ""),
+            text: `${actorName} · ${r.action ?? ""}${r.target_table ? ` [${r.target_table}]` : ""}`,
+          };
+        });
 
         if (alive) setMessages(mapped);
 
@@ -117,7 +129,7 @@ export function DashboardLayout({
               const next = {
                 id: String(n.id),
                 at: String(n.created_at ?? ""),
-                text: `${n.actor_email ?? "—"} · ${n.action ?? ""}${n.target ? ` · ${n.target}` : ""}`,
+                text: `${n.actor_role ?? "Système"} · ${n.action ?? ""}${n.target_table ? ` [${n.target_table}]` : ""}`,
               };
               setMessages((prev) => [next, ...prev].slice(0, 20));
             },
