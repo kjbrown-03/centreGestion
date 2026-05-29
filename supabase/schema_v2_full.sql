@@ -83,6 +83,15 @@ $$;
 -- Auto-create profile on signup
 create or replace function app.handle_new_user() returns trigger
 language plpgsql security definer as $$
+declare
+  v_first text;
+  v_last text;
+  v_sex text;
+  v_birth date;
+  v_blood text;
+  v_pid uuid;
+  v_full_name text;
+  v_role app.user_role;
 begin
   insert into app.profiles (user_id, role, full_name)
   values (
@@ -91,6 +100,33 @@ begin
     coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1))
   )
   on conflict (user_id) do nothing;
+
+  v_role := coalesce(nullif(new.raw_user_meta_data->>'role','')::app.user_role, 'patient'::app.user_role);
+  if v_role = 'patient'::app.user_role then
+    if not exists (select 1 from app.patient_accounts pa where pa.user_id = new.id) then
+      v_full_name := coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1));
+      v_first := coalesce(nullif(new.raw_user_meta_data->>'first_name',''), split_part(v_full_name, ' ', 1), 'Patient');
+      v_last := coalesce(nullif(new.raw_user_meta_data->>'last_name',''), nullif(regexp_replace(v_full_name, '^[^ ]+\s*', ''),''), 'Inscrit');
+      v_sex := nullif(new.raw_user_meta_data->>'sex','');
+      if v_sex not in ('M','F') then v_sex := null; end if;
+      begin
+        v_birth := nullif(new.raw_user_meta_data->>'birth_date','')::date;
+      exception when others then
+        v_birth := null;
+      end;
+      v_blood := nullif(new.raw_user_meta_data->>'blood_type','');
+      if v_blood not in ('A+','A-','B+','B-','AB+','AB-','O+','O-') then v_blood := null; end if;
+
+      insert into app.patients (first_name, last_name, sex, birth_date, blood_type, created_by)
+      values (v_first, v_last, v_sex, v_birth, v_blood, new.id)
+      returning id into v_pid;
+
+      insert into app.patient_accounts (user_id, patient_id)
+      values (new.id, v_pid)
+      on conflict (user_id) do nothing;
+    end if;
+  end if;
+
   return new;
 end $$;
 

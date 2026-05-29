@@ -38,6 +38,12 @@ function Login() {
   const [regRole, setRegRole] = useState<Role>("patient");
   const [showRegPassword, setShowRegPassword] = useState(false);
 
+  const [regFirstName, setRegFirstName] = useState("");
+  const [regLastName, setRegLastName] = useState("");
+  const [regSex, setRegSex] = useState("");
+  const [regBirthDate, setRegBirthDate] = useState("");
+  const [regBlood, setRegBlood] = useState("");
+
   const REGISTER_ROLES = useMemo(() => ROLES.filter((r) => r.id === "patient"), []);
   
   const [showHelper, setShowHelper] = useState(false);
@@ -195,6 +201,25 @@ function Login() {
       return;
     }
 
+    if (regRole === "patient") {
+      if (!regFirstName.trim() || !regLastName.trim()) {
+        toast.error("Renseignez votre prénom et votre nom.");
+        return;
+      }
+      if (!regSex) {
+        toast.error("Sélectionnez votre sexe (M/F).");
+        return;
+      }
+      if (!regBirthDate) {
+        toast.error("Saisissez votre date de naissance.");
+        return;
+      }
+      if (!regBlood) {
+        toast.error("Sélectionnez votre groupe sanguin.");
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const supabase = await getSupabaseAsync();
@@ -202,7 +227,15 @@ function Login() {
         email: cleanEmail,
         password: regPassword,
         options: {
-          data: { full_name: regName.trim(), role: regRole },
+          data: {
+            full_name: regName.trim(),
+            role: regRole,
+            first_name: (regFirstName || regName.split(" ")[0] || "").trim() || null,
+            last_name: (regLastName || regName.split(" ").slice(1).join(" ") || "").trim() || null,
+            sex: regSex || null,
+            birth_date: regBirthDate || null,
+            blood_type: regBlood || null,
+          },
         },
       });
 
@@ -297,14 +330,83 @@ function Login() {
                   </select>
                 </div>
 
+                {regRole === "patient" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Prénom</label>
+                      <input
+                        type="text"
+                        value={regFirstName}
+                        onChange={(e) => setRegFirstName(e.target.value)}
+                        placeholder="Pierre"
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Nom</label>
+                      <input
+                        type="text"
+                        value={regLastName}
+                        onChange={(e) => setRegLastName(e.target.value)}
+                        placeholder="Durand"
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Sexe</label>
+                      <select
+                        value={regSex}
+                        onChange={(e) => setRegSex(e.target.value)}
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      >
+                        <option value="">— Sélectionner —</option>
+                        <option value="M">M</option>
+                        <option value="F">F</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Date de naissance</label>
+                      <input
+                        type="date"
+                        value={regBirthDate}
+                        onChange={(e) => setRegBirthDate(e.target.value)}
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5 col-span-2">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Groupe sanguin</label>
+                      <select
+                        value={regBlood}
+                        onChange={(e) => setRegBlood(e.target.value)}
+                        className="w-full rounded-2xl border bg-card px-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+                        required
+                      >
+                        <option value="">— Sélectionner —</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">Adresse e-mail</label>
                   <div className="relative">
                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <input
                       type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
                       placeholder="nom@exemple.com"
                       className="w-full rounded-2xl border bg-card pl-11 pr-4 py-3.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
                       required
