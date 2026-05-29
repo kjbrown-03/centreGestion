@@ -1,0 +1,4 @@
+{
+  "VITE_SUPABASE_URL": "https://lowttydkhdgzgsjxsqlt.supabase.co",
+  "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxvd3R0eWRraGRnemdzanhzcWx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5NjUxODgsImV4cCI6MjA5NTU0MTE4OH0.dYwLrKs0Ir3hA_EtDvBP4YMvmfLhO9ulPUN6eJz8Puw"
+}
