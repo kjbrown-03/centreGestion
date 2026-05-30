@@ -114,6 +114,19 @@ function ManageUsersSection() {
   const [role, setRole] = useState<RoleId | "">("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const locationSearch = (window?.location?.search ?? "");
+
+  // Initialize q from ?q=
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(locationSearch);
+      const initial = params.get("q") ?? "";
+      setQ(initial);
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let alive = true;

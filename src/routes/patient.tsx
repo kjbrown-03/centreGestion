@@ -26,7 +26,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Stethoscope,
-  Activity
+  Activity,
 } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -72,7 +72,7 @@ function PatientDashboard() {
           .schema("app")
           .from("patient_accounts")
           .select(
-            "patient_id, patient:patient_id (id, first_name, last_name, birth_date, blood_type, phone, allergies, chronic_conditions)"
+            "patient_id, patient:patient_id (id, first_name, last_name, birth_date, blood_type, phone, allergies, chronic_conditions)",
           )
           .eq("user_id", user.id)
           .single();
@@ -90,14 +90,16 @@ function PatientDashboard() {
             .schema("app")
             .from("prescriptions")
             .select(
-              "id, created_at, status, practitioner:practitioner_id (full_name), items:prescription_items (id, medicine_name, dosage, frequency, duration)"
+              "id, created_at, status, practitioner:practitioner_id (full_name), items:prescription_items (id, medicine_name, dosage, frequency, duration)",
             )
             .eq("patient_id", pid)
             .order("created_at", { ascending: false }),
           sb
             .schema("app")
             .from("invoices")
-            .select("id, invoice_no, status, total, created_at, items:invoice_items (label, qty, unit_price, line_total)")
+            .select(
+              "id, invoice_no, status, total, created_at, items:invoice_items (label, qty, unit_price, line_total)",
+            )
             .eq("patient_id", pid)
             .order("created_at", { ascending: false }),
         ]);
@@ -123,17 +125,17 @@ function PatientDashboard() {
   const patientAppointments = useMemo(
     () =>
       [...appointments].sort(
-        (a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()
+        (a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime(),
       ),
-    [appointments]
+    [appointments],
   );
 
   const upcomingAppointments = patientAppointments.filter(
-    (apt) => new Date(apt.scheduled_at).getTime() >= Date.now()
+    (apt) => new Date(apt.scheduled_at).getTime() >= Date.now(),
   );
 
   const pastAppointments = patientAppointments.filter(
-    (apt) => new Date(apt.scheduled_at).getTime() < Date.now()
+    (apt) => new Date(apt.scheduled_at).getTime() < Date.now(),
   );
 
   const patientPrescriptions = prescriptions;
@@ -151,10 +153,17 @@ function PatientDashboard() {
     try {
       const supabase = await getSupabaseAsync();
       const whenIso = new Date(`${desiredDate}T${desiredTime}:00`).toISOString();
+      const authUser = (await supabase.auth.getUser()).data.user;
       const { error } = await (supabase as any)
         .schema("app")
         .from("appointments")
-        .insert({ patient_id: patient.id, scheduled_at: whenIso, reason: reason.trim() || null });
+        .insert({
+          patient_id: patient.id,
+          scheduled_at: whenIso,
+          reason: reason.trim() || null,
+          status: "en_attente",
+          created_by: authUser?.id ?? null,
+        });
       if (error) throw error;
       setDesiredDate("");
       setDesiredTime("");
@@ -189,7 +198,9 @@ function PatientDashboard() {
   async function runAiReminders() {
     try {
       if (!hasGemini()) {
-        toast.error("Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env pour activer l'assistant.");
+        toast.error(
+          "Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env pour activer l'assistant.",
+        );
         return;
       }
       setAiLoading(true);
@@ -208,118 +219,129 @@ function PatientDashboard() {
     }
   }
 
-function PatientMessaging({ patient }: { patient: any | null }) {
-  const [loading, setLoading] = useState<boolean>(false);
-  const [sending, setSending] = useState<boolean>(false);
-  const [messages, setMessages] = useState<any[]>([]);
-  const [body, setBody] = useState<string>("");
+  function PatientMessaging({ patient }: { patient: any | null }) {
+    const [loading, setLoading] = useState<boolean>(false);
+    const [sending, setSending] = useState<boolean>(false);
+    const [messages, setMessages] = useState<any[]>([]);
+    const [body, setBody] = useState<string>("");
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
+    useEffect(() => {
+      let alive = true;
+      (async () => {
+        if (!patient?.id) return;
+        setLoading(true);
+        try {
+          const supabase = await getSupabaseAsync();
+          const { data, error } = await (supabase as any)
+            .schema("app")
+            .from("messages")
+            .select("id, body, sender, created_at, practitioner:practitioner_id(full_name)")
+            .eq("patient_id", patient.id)
+            .order("created_at", { ascending: true });
+          if (error) throw error;
+          if (alive) setMessages(data ?? []);
+        } catch (err: any) {
+          toast.error(err?.message ?? "Impossible de charger la messagerie.");
+        } finally {
+          if (alive) setLoading(false);
+        }
+      })();
+      return () => {
+        alive = false;
+      };
+    }, [patient?.id]);
+
+    async function send() {
       if (!patient?.id) return;
-      setLoading(true);
+      const txt = body.trim();
+      if (!txt) return;
+      setSending(true);
       try {
         const supabase = await getSupabaseAsync();
-        const { data, error } = await (supabase as any)
+        const { error } = await (supabase as any)
+          .schema("app")
+          .from("messages")
+          .insert({ patient_id: patient.id, practitioner_id: null, sender: "patient", body: txt });
+        if (error) throw error;
+        setBody("");
+        const { data, error: rErr } = await (supabase as any)
           .schema("app")
           .from("messages")
           .select("id, body, sender, created_at, practitioner:practitioner_id(full_name)")
           .eq("patient_id", patient.id)
           .order("created_at", { ascending: true });
-        if (error) throw error;
-        if (alive) setMessages(data ?? []);
+        if (!rErr) setMessages(data ?? []);
       } catch (err: any) {
-        toast.error(err?.message ?? "Impossible de charger la messagerie.");
+        toast.error(err?.message ?? "Envoi impossible.");
       } finally {
-        if (alive) setLoading(false);
+        setSending(false);
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [patient?.id]);
-
-  async function send() {
-    if (!patient?.id) return;
-    const txt = body.trim();
-    if (!txt) return;
-    setSending(true);
-    try {
-      const supabase = await getSupabaseAsync();
-      const { error } = await (supabase as any)
-        .schema("app")
-        .from("messages")
-        .insert({ patient_id: patient.id, practitioner_id: null, sender: "patient", body: txt });
-      if (error) throw error;
-      setBody("");
-      const { data, error: rErr } = await (supabase as any)
-        .schema("app")
-        .from("messages")
-        .select("id, body, sender, created_at, practitioner:practitioner_id(full_name)")
-        .eq("patient_id", patient.id)
-        .order("created_at", { ascending: true });
-      if (!rErr) setMessages(data ?? []);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Envoi impossible.");
-    } finally {
-      setSending(false);
     }
-  }
 
-  return (
-    <Card className="rounded-3xl border bg-card p-7 shadow-sm max-w-3xl mx-auto">
-      <div className="flex items-center gap-3">
-        <span className="p-2 rounded-xl gradient-mint text-[color:var(--navy)]">
-          <MessageSquare className="size-5" />
-        </span>
-        <div>
-          <h3 className="text-lg font-bold text-[color:var(--navy)]">Messagerie sécurisée</h3>
-          <p className="text-xs text-muted-foreground">Échangez avec le secrétariat et votre praticien.</p>
+    return (
+      <Card className="rounded-3xl border bg-card p-7 shadow-sm max-w-3xl mx-auto">
+        <div className="flex items-center gap-3">
+          <span className="p-2 rounded-xl gradient-mint text-[color:var(--navy)]">
+            <MessageSquare className="size-5" />
+          </span>
+          <div>
+            <h3 className="text-lg font-bold text-[color:var(--navy)]">Messagerie sécurisée</h3>
+            <p className="text-xs text-muted-foreground">
+              Échangez avec le secrétariat et votre praticien.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div className="mt-6 space-y-3 max-h-[380px] overflow-auto pr-1">
-        {loading ? (
-          <div className="text-sm text-muted-foreground">Chargement…</div>
-        ) : (messages ?? []).length === 0 ? (
-          <div className="text-sm text-muted-foreground">Aucun message.</div>
-        ) : (
-          messages.map((m) => (
-            <div
-              key={m.id}
-              className={`px-4 py-3 rounded-2xl border ${
-                m.sender === "patient" ? "bg-[color:var(--mint)]/10 ml-8" : "bg-muted/40 mr-8"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-muted-foreground">
-                  {m.sender === "patient" ? "Moi" : m.practitioner?.full_name || (m.sender === "secretaire" ? "Secrétariat" : "Praticien")}
-                </span>
-                <span className="text-[10px] text-muted-foreground">
-                  {new Date(m.created_at).toLocaleString()}
-                </span>
+        <div className="mt-6 space-y-3 max-h-[380px] overflow-auto pr-1">
+          {loading ? (
+            <div className="text-sm text-muted-foreground">Chargement…</div>
+          ) : (messages ?? []).length === 0 ? (
+            <div className="text-sm text-muted-foreground">Aucun message.</div>
+          ) : (
+            messages.map((m) => (
+              <div
+                key={m.id}
+                className={`px-4 py-3 rounded-2xl border ${
+                  m.sender === "patient" ? "bg-[color:var(--mint)]/10 ml-8" : "bg-muted/40 mr-8"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-muted-foreground">
+                    {m.sender === "patient"
+                      ? "Moi"
+                      : m.practitioner?.full_name ||
+                        (m.sender === "secretaire" ? "Secrétariat" : "Praticien")}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(m.created_at).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-sm text-[color:var(--navy)] mt-1 whitespace-pre-wrap">
+                  {m.body}
+                </p>
               </div>
-              <p className="text-sm text-[color:var(--navy)] mt-1 whitespace-pre-wrap">{m.body}</p>
-            </div>
-          ))
-        )}
-      </div>
+            ))
+          )}
+        </div>
 
-      <div className="mt-6 flex gap-2">
-        <input
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Votre message…"
-          className="flex-1 rounded-2xl border bg-background px-4 py-3 text-sm outline-none"
-        />
-        <Button onClick={() => void send()} disabled={sending || !body.trim()} className="rounded-2xl">
-          Envoyer
-        </Button>
-      </div>
-    </Card>
-  );
-}
+        <div className="mt-6 flex gap-2">
+          <input
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Votre message…"
+            className="flex-1 rounded-2xl border bg-background px-4 py-3 text-sm outline-none"
+          />
+          <Button
+            onClick={() => void send()}
+            disabled={sending || !body.trim()}
+            className="rounded-2xl"
+          >
+            Envoyer
+          </Button>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <DashboardLayout allow="patient" title="Mon Espace Santé">
@@ -397,7 +419,6 @@ function PatientMessaging({ patient }: { patient: any | null }) {
         {/* ================= rendez-vous content ================= */}
         <TabsContent value="appointments" className="space-y-6 outline-none">
           <div className="grid lg:grid-cols-3 gap-6">
-            
             {/* Request Appointment Form */}
             <Card className="lg:col-span-1 rounded-3xl border bg-card p-6 shadow-sm flex flex-col justify-between">
               <div>
@@ -412,7 +433,7 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                     Planifiez une consultation de médecine générale ou de suivi.
                   </CardDescription>
                 </CardHeader>
-                
+
                 <form onSubmit={handleBookAppointment} className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)] mb-1.5">
@@ -466,7 +487,6 @@ function PatientMessaging({ patient }: { patient: any | null }) {
 
             {/* Appointment Lists */}
             <div className="lg:col-span-2 space-y-6">
-              
               {/* Upcoming */}
               <Card className="rounded-3xl border bg-card p-6 shadow-sm">
                 <CardHeader className="p-0 mb-5">
@@ -475,11 +495,13 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                     Consultations planifiées
                   </CardTitle>
                 </CardHeader>
-                
+
                 {upcomingAppointments.length === 0 ? (
                   <div className="text-center py-10 border border-dashed rounded-2xl">
                     <Calendar className="size-8 mx-auto text-muted-foreground/50 mb-3" />
-                    <p className="text-muted-foreground text-sm">Aucun rendez-vous planifié à venir.</p>
+                    <p className="text-muted-foreground text-sm">
+                      Aucun rendez-vous planifié à venir.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -501,9 +523,12 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                             </span>
                           </div>
                           <div>
-                            <p className="font-semibold text-[color:var(--navy)]">{apt.practitioner?.full_name || "—"}</p>
+                            <p className="font-semibold text-[color:var(--navy)]">
+                              {apt.practitioner?.full_name || "—"}
+                            </p>
                             <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                              <Clock className="size-3" /> {format(new Date(apt.scheduled_at), "HH:mm")} • {apt.reason}
+                              <Clock className="size-3" />{" "}
+                              {format(new Date(apt.scheduled_at), "HH:mm")} • {apt.reason}
                             </p>
                           </div>
                         </div>
@@ -537,9 +562,11 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                     Historique des consultations
                   </CardTitle>
                 </CardHeader>
-                
+
                 {pastAppointments.length === 0 ? (
-                  <p className="text-muted-foreground text-sm text-center py-6">Aucun historique disponible.</p>
+                  <p className="text-muted-foreground text-sm text-center py-6">
+                    Aucun historique disponible.
+                  </p>
                 ) : (
                   <div className="space-y-3">
                     {pastAppointments.map((apt) => (
@@ -549,9 +576,14 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                       >
                         <div className="flex items-center justify-between gap-4">
                           <div>
-                            <p className="font-semibold text-[color:var(--navy)]/80">{apt.practitioner?.full_name || "—"}</p>
+                            <p className="font-semibold text-[color:var(--navy)]/80">
+                              {apt.practitioner?.full_name || "—"}
+                            </p>
                             <p className="text-xs text-muted-foreground mt-0.5">
-                              Le {format(new Date(apt.scheduled_at), "dd MMMM yyyy à HH:mm", { locale: fr })}
+                              Le{" "}
+                              {format(new Date(apt.scheduled_at), "dd MMMM yyyy à HH:mm", {
+                                locale: fr,
+                              })}
                             </p>
                           </div>
                           <span className="px-3 py-1 bg-muted border text-muted-foreground text-xs rounded-full font-medium">
@@ -580,14 +612,20 @@ function PatientMessaging({ patient }: { patient: any | null }) {
 
             <div className="space-y-2">
               {(loading ? [] : invoices).map((f: any) => (
-                <div key={f.id} className="flex items-center gap-4 p-4 rounded-2xl border justify-between">
+                <div
+                  key={f.id}
+                  className="flex items-center gap-4 p-4 rounded-2xl border justify-between"
+                >
                   <div className="flex-1">
                     <p className="font-semibold text-[color:var(--navy)]">Facture {f.invoice_no}</p>
                     <p className="text-xs text-muted-foreground">
-                      {format(new Date(f.created_at), "dd/MM/yyyy", { locale: fr })} · Total {Number(f.total ?? 0).toFixed(2)} XAF
+                      {format(new Date(f.created_at), "dd/MM/yyyy", { locale: fr })} · Total{" "}
+                      {Number(f.total ?? 0).toFixed(2)} XAF
                     </p>
                   </div>
-                  <span className={`text-[10px] px-2 py-1 rounded-full border ${f.status === "payee" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                  <span
+                    className={`text-[10px] px-2 py-1 rounded-full border ${f.status === "payee" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
+                  >
                     {f.status}
                   </span>
                   <button
@@ -609,41 +647,55 @@ function PatientMessaging({ patient }: { patient: any | null }) {
         {/* ================= dossier medical content ================= */}
         <TabsContent value="medical" className="space-y-6 outline-none">
           <div className="grid md:grid-cols-3 gap-6">
-            
             {/* IdentityCard */}
             <Card className="rounded-3xl border bg-card p-7 shadow-sm relative overflow-hidden">
               <div className="absolute top-0 right-0 size-32 gradient-mint rounded-full blur-3xl opacity-10" />
               <div className="flex items-center gap-4">
                 <div className="size-16 rounded-2xl gradient-mint grid place-items-center text-[color:var(--navy)] font-bold text-2xl shadow-sm">
-                  {patient ? `${(patient.first_name || "").slice(0,1)}${(patient.last_name || "").slice(0,1)}` : "?"}
+                  {patient
+                    ? `${(patient.first_name || "").slice(0, 1)}${(patient.last_name || "").slice(0, 1)}`
+                    : "?"}
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-[color:var(--navy)]">{patient ? `${patient.first_name} ${patient.last_name}` : "—"}</h3>
+                  <h3 className="text-xl font-bold text-[color:var(--navy)]">
+                    {patient ? `${patient.first_name} ${patient.last_name}` : "—"}
+                  </h3>
                   <p className="text-xs text-muted-foreground mt-0.5">Dossier médical unifié 2KC</p>
                 </div>
               </div>
 
               <div className="mt-8 space-y-4 border-t border-border/60 pt-6">
                 <div>
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Date de Naissance</p>
+                  <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
+                    Date de Naissance
+                  </p>
                   <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">
-                    {patient?.birth_date ? format(new Date(patient.birth_date), "dd MMMM yyyy", { locale: fr }) : "—"}
+                    {patient?.birth_date
+                      ? format(new Date(patient.birth_date), "dd MMMM yyyy", { locale: fr })
+                      : "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">E-mail</p>
-                  <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">{authEmail ?? "—"}</p>
+                  <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
+                    E-mail
+                  </p>
+                  <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">
+                    {authEmail ?? "—"}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Téléphone</p>
-                  <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">{patient?.phone ?? "—"}</p>
+                  <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
+                    Téléphone
+                  </p>
+                  <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">
+                    {patient?.phone ?? "—"}
+                  </p>
                 </div>
               </div>
             </Card>
 
             {/* Allergies & Biological Info */}
             <div className="md:col-span-2 grid sm:grid-cols-2 gap-6">
-              
               {/* Allergy Card */}
               <Card className="rounded-3xl border border-red-500/20 bg-card p-6 shadow-sm flex flex-col justify-between">
                 <div>
@@ -655,13 +707,18 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                   </div>
                   <div className="space-y-2">
                     {(patient?.allergies ?? []).map((a: string) => (
-                      <div key={a} className="px-3.5 py-2.5 bg-red-500/5 border border-red-500/10 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2">
+                      <div
+                        key={a}
+                        className="px-3.5 py-2.5 bg-red-500/5 border border-red-500/10 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2"
+                      >
                         ⚠️ {a}
                       </div>
                     ))}
                   </div>
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-4">Validé par l'équipe soignante</p>
+                <p className="text-[10px] text-muted-foreground mt-4">
+                  Validé par l'équipe soignante
+                </p>
               </Card>
 
               {/* Medical History */}
@@ -675,7 +732,10 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                   </div>
                   <ul className="space-y-2">
                     {(patient?.chronic_conditions ?? []).map((h: string, i: number) => (
-                      <li key={i} className="text-xs text-[color:var(--navy)]/80 flex items-start gap-2 bg-muted/30 p-2.5 rounded-xl">
+                      <li
+                        key={i}
+                        className="text-xs text-[color:var(--navy)]/80 flex items-start gap-2 bg-muted/30 p-2.5 rounded-xl"
+                      >
                         <span className="mt-0.5 size-1.5 rounded-full bg-[color:var(--mint)] shrink-0" />
                         {h}
                       </li>
@@ -697,11 +757,17 @@ function PatientMessaging({ patient }: { patient: any | null }) {
             </CardHeader>
             <div className="grid sm:grid-cols-2 gap-4">
               {((patientPrescriptions?.[0]?.items ?? []) as any[]).map((m: any) => (
-                <div key={m.id} className="p-4 border rounded-2xl bg-muted/10 hover:bg-muted/20 transition duration-300 flex items-start justify-between gap-4">
+                <div
+                  key={m.id}
+                  className="p-4 border rounded-2xl bg-muted/10 hover:bg-muted/20 transition duration-300 flex items-start justify-between gap-4"
+                >
                   <div>
-                    <h4 className="font-bold text-[color:var(--navy)] text-base">{m.medicine_name}</h4>
+                    <h4 className="font-bold text-[color:var(--navy)] text-base">
+                      {m.medicine_name}
+                    </h4>
                     <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
-                      <Activity className="size-3.5" /> Posologie : {[m.dosage, m.frequency, m.duration].filter(Boolean).join(" · ") || "—"}
+                      <Activity className="size-3.5" /> Posologie :{" "}
+                      {[m.dosage, m.frequency, m.duration].filter(Boolean).join(" · ") || "—"}
                     </p>
                   </div>
                   <span className="px-2.5 py-1 bg-[color:var(--mint)]/20 border border-[color:var(--mint)]/30 text-[color:var(--navy)] text-[10px] rounded-full font-bold uppercase tracking-wider shrink-0 shadow-sm">
@@ -731,16 +797,24 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
-                      <h4 className="font-bold text-[color:var(--navy)] text-lg">Ordonnance du {format(new Date(presc.created_at), "dd MMM yyyy", { locale: fr })}</h4>
+                      <h4 className="font-bold text-[color:var(--navy)] text-lg">
+                        Ordonnance du{" "}
+                        {format(new Date(presc.created_at), "dd MMM yyyy", { locale: fr })}
+                      </h4>
                       <span className="text-[10px] font-mono px-2 py-0.5 bg-muted text-muted-foreground rounded border">
                         #{presc.id}
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">Prescrit par {presc.practitioner?.full_name || "—"}</p>
-                    
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Prescrit par {presc.practitioner?.full_name || "—"}
+                    </p>
+
                     <div className="mt-4 flex flex-wrap gap-2">
                       {(presc.items ?? []).map((m: any, idx: number) => (
-                        <span key={idx} className="text-xs px-3 py-1 rounded-xl bg-muted/40 border text-[color:var(--navy)]/80 font-medium">
+                        <span
+                          key={idx}
+                          className="text-xs px-3 py-1 rounded-xl bg-muted/40 border text-[color:var(--navy)]/80 font-medium"
+                        >
                           {m.medicine_name}
                         </span>
                       ))}
@@ -796,11 +870,17 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                     </span>
                     2KC
                   </div>
-                  <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mt-1">Centre de Santé Pluridisciplinaire</p>
-                  <p className="text-xs text-slate-400 mt-1">12 Rue de la Santé, 75014 Paris • Tél: 01 40 40 40 40</p>
+                  <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mt-1">
+                    Centre de Santé Pluridisciplinaire
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    12 Rue de la Santé, 75014 Paris • Tél: 01 40 40 40 40
+                  </p>
                 </div>
                 <div className="text-left sm:text-right text-xs text-slate-500">
-                  <p className="font-bold text-slate-800">{activePresc.practitioner?.full_name || "—"}</p>
+                  <p className="font-bold text-slate-800">
+                    {activePresc.practitioner?.full_name || "—"}
+                  </p>
                   <p>Médecin Généraliste</p>
                   <p className="mt-1 font-mono text-[10px] text-slate-400">RPPS: 10009876543</p>
                 </div>
@@ -810,7 +890,9 @@ function PatientMessaging({ patient }: { patient: any | null }) {
               <div className="mt-6 flex justify-between text-sm">
                 <div>
                   <span className="text-slate-400">Patient : </span>
-                  <span className="font-bold text-slate-800">{patient ? `${patient.first_name} ${patient.last_name}` : "—"}</span>
+                  <span className="font-bold text-slate-800">
+                    {patient ? `${patient.first_name} ${patient.last_name}` : "—"}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-400">Date : </span>
@@ -822,8 +904,10 @@ function PatientMessaging({ patient }: { patient: any | null }) {
 
               {/* Rx prescription content */}
               <div className="mt-8 min-h-[160px] space-y-6">
-                <div className="font-serif italic text-3xl text-slate-300 font-bold select-none">Rx</div>
-                
+                <div className="font-serif italic text-3xl text-slate-300 font-bold select-none">
+                  Rx
+                </div>
+
                 <div className="space-y-4 pl-4 sm:pl-8">
                   {(activePresc.items ?? []).map((m: any, idx: number) => (
                     <div key={idx} className="space-y-1">
@@ -849,11 +933,15 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                   Ordonnance signée numériquement
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">Signature & Cachet</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">
+                    Signature & Cachet
+                  </p>
                   <div className="size-16 rounded-full border-2 border-emerald-600/30 text-emerald-700/60 flex items-center justify-center font-serif text-[10px] rotate-12 select-none border-dashed mx-auto mb-2 uppercase font-bold shrink-0">
                     2KC SANTE
                   </div>
-                  <p className="text-[11px] font-bold text-slate-800">{activePresc.practitioner?.full_name || "—"}</p>
+                  <p className="text-[11px] font-bold text-slate-800">
+                    {activePresc.practitioner?.full_name || "—"}
+                  </p>
                 </div>
               </div>
 
@@ -895,12 +983,18 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                     </span>
                     2KC
                   </div>
-                  <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mt-1">Centre de Santé Pluridisciplinaire</p>
-                  <p className="text-xs text-slate-400 mt-1">12 Rue de la Santé, 75014 Paris • Tél: 01 40 40 40 40</p>
+                  <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mt-1">
+                    Centre de Santé Pluridisciplinaire
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    12 Rue de la Santé, 75014 Paris • Tél: 01 40 40 40 40
+                  </p>
                 </div>
                 <div className="text-left sm:text-right text-xs text-slate-500">
                   <p className="font-bold text-slate-800">Facture {activeInvoice.invoice_no}</p>
-                  <p>Date: {format(new Date(activeInvoice.created_at), "dd/MM/yyyy", { locale: fr })}</p>
+                  <p>
+                    Date: {format(new Date(activeInvoice.created_at), "dd/MM/yyyy", { locale: fr })}
+                  </p>
                 </div>
               </div>
 
@@ -908,7 +1002,9 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                 <div className="flex justify-between">
                   <div>
                     <span className="text-slate-400">Patient : </span>
-                    <span className="font-bold text-slate-800">{patient ? `${patient.first_name} ${patient.last_name}` : "—"}</span>
+                    <span className="font-bold text-slate-800">
+                      {patient ? `${patient.first_name} ${patient.last_name}` : "—"}
+                    </span>
                   </div>
                   <div>
                     <span className="text-slate-400">Statut : </span>
@@ -933,7 +1029,9 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                       </div>
                     ))}
                     {(activeInvoice.items ?? []).length === 0 ? (
-                      <div className="px-4 py-3 text-sm text-muted-foreground">Aucun détail disponible.</div>
+                      <div className="px-4 py-3 text-sm text-muted-foreground">
+                        Aucun détail disponible.
+                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -942,7 +1040,9 @@ function PatientMessaging({ patient }: { patient: any | null }) {
                   <div className="text-sm">
                     <div className="flex justify-between gap-8">
                       <span className="text-slate-500">Total</span>
-                      <span className="font-bold text-slate-800">{Number(activeInvoice.total ?? 0).toFixed(2)} XAF</span>
+                      <span className="font-bold text-slate-800">
+                        {Number(activeInvoice.total ?? 0).toFixed(2)} XAF
+                      </span>
                     </div>
                   </div>
                 </div>

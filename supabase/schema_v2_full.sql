@@ -694,6 +694,11 @@ drop policy if exists prescriptions_insert_medecin on app.prescriptions;
 create policy prescriptions_insert_medecin on app.prescriptions
 for insert with check (app.has_any_role(array['admin','medecin']::app.user_role[]));
 
+drop policy if exists prescriptions_update_pharmacien on app.prescriptions;
+create policy prescriptions_update_pharmacien on app.prescriptions
+for update using (app.has_any_role(array['admin','pharmacien']::app.user_role[]))
+with check (app.has_any_role(array['admin','pharmacien']::app.user_role[]));
+
 drop policy if exists prescription_items_read_staff on app.prescription_items;
 drop policy if exists prescription_items_read_staff_all on app.prescription_items;
 drop policy if exists prescription_items_read_medecin_own on app.prescription_items;
@@ -825,6 +830,15 @@ for select using (app.has_any_role(array['admin','comptable','secretaire','direc
 drop policy if exists invoices_insert_finance on app.invoices;
 create policy invoices_insert_finance on app.invoices
 for insert with check (app.has_any_role(array['admin','secretaire','comptable']::app.user_role[]));
+
+drop policy if exists invoices_insert_medecin_consultation on app.invoices;
+create policy invoices_insert_medecin_consultation on app.invoices
+for insert with check (app.has_any_role(array['admin','medecin']::app.user_role[]));
+
+drop policy if exists invoices_update_comptable on app.invoices;
+create policy invoices_update_comptable on app.invoices
+for update using (app.has_any_role(array['admin','comptable']::app.user_role[]))
+with check (app.has_any_role(array['admin','comptable']::app.user_role[]));
 
 -- invoices: patient can read own invoices
 drop policy if exists invoices_read_patient on app.invoices;

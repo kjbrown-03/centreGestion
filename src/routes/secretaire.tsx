@@ -45,31 +45,69 @@ function SecretaireHome() {
   const [appts, setAppts] = useState<Appt[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiText, setAiText] = useState("");
-  const [practitioners, setPractitioners] = useState<Array<{ user_id: string; full_name: string }>>([]);
+  const [practitioners, setPractitioners] = useState<Array<{ user_id: string; full_name: string }>>(
+    [],
+  );
   const [assignSel, setAssignSel] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
 
   const todayStart = useMemo(() => startOfTodayIso(), []);
   const tomorrowStart = useMemo(() => startOfTomorrowIso(), []);
   const in7Days = useMemo(() => startOfInDaysIso(7), []);
 
+  // Initialize from ?q=
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search ?? "");
+      setQuery(params.get("q") ?? "");
+    } catch {}
+  }, []);
+
   useEffect(() => {
     let alive = true;
-    (async () => {
+    let channel: any;
+    let supabaseForCleanup: any;
+
+    async function loadAppointments() {
       setLoading(true);
       try {
         const supabase = await getSupabaseAsync();
+        supabaseForCleanup = supabase;
         const sb: any = supabase;
-        const { data, error } = await sb
+        // If q provided, prefetch matching patients to filter appointments by patient_id
+        let patientIds: string[] = [];
+        const q = (query ?? "").trim();
+        if (q) {
+          const p = await sb
+            .schema("app")
+            .from("patients")
+            .select("id")
+            .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`);
+          if (!p.error) patientIds = (p.data ?? []).map((r: any) => r.id);
+        }
+
+        let qb = sb
           .schema("app")
           .from("appointments")
-          .select(`
+          .select(
+            `
             id, scheduled_at, status, reason,
             patient:patient_id (first_name, last_name),
             practitioner:practitioner_id (full_name)
-          `)
+          `,
+          )
           .gte("scheduled_at", todayStart)
-          .lt("scheduled_at", in7Days)
-          .order("scheduled_at", { ascending: true });
+          .lt("scheduled_at", in7Days);
+
+        if (q) {
+          if (patientIds.length > 0) {
+            qb = qb.in("patient_id", patientIds);
+          } else {
+            qb = qb.ilike("reason", `%${q}%`);
+          }
+        }
+
+        const { data, error } = await qb.order("scheduled_at", { ascending: true });
         if (error) throw error;
         // load practitioners for assignment
         const profs = await sb
@@ -80,23 +118,65 @@ function SecretaireHome() {
         if (profs.error) throw profs.error;
         if (alive) {
           setAppts((data ?? []) as any);
-          setPractitioners(((profs.data ?? []) as any).map((p: any) => ({ user_id: p.user_id, full_name: p.full_name })));
+          setPractitioners(
+            ((profs.data ?? []) as any).map((p: any) => ({
+              user_id: p.user_id,
+              full_name: p.full_name,
+            })),
+          );
         }
       } finally {
         if (alive) setLoading(false);
       }
-    })();
+    }
+
+    void loadAppointments();
+
+    void getSupabaseAsync().then((supabase) => {
+      if (!alive) return;
+      supabaseForCleanup = supabase;
+      channel = supabase
+        .channel(`secretary_appointments_${Date.now()}`)
+        .on("postgres_changes", { event: "*", schema: "app", table: "appointments" }, () => {
+          void loadAppointments();
+        })
+        .subscribe();
+    });
+
     return () => {
       alive = false;
+      try {
+        if (channel && supabaseForCleanup?.removeChannel) supabaseForCleanup.removeChannel(channel);
+      } catch {
+        // ignore
+      }
     };
-  }, [todayStart, in7Days]);
+  }, [todayStart, in7Days, query]);
 
   const queue = useMemo(
-    () => appts.filter((a) => a.status === "en_attente" && a.scheduled_at >= todayStart && a.scheduled_at < tomorrowStart),
+    () =>
+      appts.filter(
+        (a) =>
+          a.status === "en_attente" &&
+          a.scheduled_at >= todayStart &&
+          a.scheduled_at < tomorrowStart,
+      ),
     [appts, todayStart, tomorrowStart],
   );
   const upcoming = useMemo(
-    () => appts.filter((a) => !(a.status === "en_attente" && a.scheduled_at >= todayStart && a.scheduled_at < tomorrowStart)),
+    () =>
+      appts.filter(
+        (a) =>
+          !(
+            a.status === "en_attente" &&
+            a.scheduled_at >= todayStart &&
+            a.scheduled_at < tomorrowStart
+          ),
+      ),
+    [appts, todayStart, tomorrowStart],
+  );
+  const todayAppts = useMemo(
+    () => appts.filter((a) => a.scheduled_at >= todayStart && a.scheduled_at < tomorrowStart),
     [appts, todayStart, tomorrowStart],
   );
 
@@ -117,7 +197,10 @@ function SecretaireHome() {
       if (error) {
         // Contrainte d'unicité: un médecin ne peut pas avoir 2 RDV au même horaire
         const msg: string = (error as any)?.message ?? "Mise à jour impossible.";
-        if (msg.toLowerCase().includes("unique") || msg.includes("appointments_unique_practitioner_time")) {
+        if (
+          msg.toLowerCase().includes("unique") ||
+          msg.includes("appointments_unique_practitioner_time")
+        ) {
           toast.error("Ce médecin a déjà un rendez-vous à cette heure.");
           return;
         }
@@ -128,7 +211,9 @@ function SecretaireHome() {
       const { data, error: rErr } = await sb
         .schema("app")
         .from("appointments")
-        .select(`id, scheduled_at, status, reason, patient:patient_id (first_name, last_name), practitioner:practitioner_id (full_name)`) 
+        .select(
+          `id, scheduled_at, status, reason, patient:patient_id (first_name, last_name), practitioner:practitioner_id (full_name)`,
+        )
         .gte("scheduled_at", todayStart)
         .lt("scheduled_at", in7Days)
         .order("scheduled_at", { ascending: true });
@@ -141,7 +226,9 @@ function SecretaireHome() {
   async function runAiAdvisor() {
     try {
       if (!hasGemini()) {
-        toast.error("Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env pour activer l'assistant.");
+        toast.error(
+          "Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env pour activer l'assistant.",
+        );
         return;
       }
       setAiLoading(true);
@@ -157,8 +244,17 @@ function SecretaireHome() {
   return (
     <DashboardLayout allow="secretaire" title="Accueil & rendez-vous">
       <div className="grid sm:grid-cols-4 gap-5">
-        <StatCard label="File d'attente" value={loading ? "…" : String(queue.length)} icon={Users} accent />
-        <StatCard label="RDV aujourd'hui" value={loading ? "…" : String(appts.length)} icon={Calendar} />
+        <StatCard
+          label="File d'attente"
+          value={loading ? "…" : String(queue.length)}
+          icon={Users}
+          accent
+        />
+        <StatCard
+          label="RDV aujourd'hui"
+          value={loading ? "…" : String(todayAppts.length)}
+          icon={Calendar}
+        />
         <StatCard label="Appels traités" value="0" icon={Phone} />
         <StatCard label="Messages" value="0" icon={MessageSquare} />
       </div>
@@ -182,10 +278,24 @@ function SecretaireHome() {
       </div>
 
       <div className="mt-8 grid lg:grid-cols-2 gap-6">
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl border bg-card p-7">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl border bg-card p-7"
+        >
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-[color:var(--navy)]">File d'attente</h3>
-            <span className="text-xs px-3 py-1 rounded-full bg-[color:var(--mint)]/20 text-[color:var(--navy)] font-medium">{loading ? "…" : `${queue.length} personnes`}</span>
+            <div className="flex items-center gap-2">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filtrer (nom patient / motif)"
+                className="text-xs rounded-xl border px-2 py-1"
+              />
+              <span className="text-xs px-3 py-1 rounded-full bg-[color:var(--mint)]/20 text-[color:var(--navy)] font-medium">
+                {loading ? "…" : `${queue.length} personnes`}
+              </span>
+            </div>
           </div>
           <div className="mt-5 space-y-2">
             {(loading ? [] : queue).map((q, i) => (
@@ -197,9 +307,13 @@ function SecretaireHome() {
                 whileHover={{ x: 4 }}
                 className="flex items-center gap-4 p-4 rounded-2xl border hover:bg-muted/40 transition"
               >
-                <div className="size-12 rounded-xl bg-[color:var(--navy)] text-[color:var(--mint)] grid place-items-center font-bold text-sm">{formatTime(q.scheduled_at)}</div>
+                <div className="size-12 rounded-xl bg-[color:var(--navy)] text-[color:var(--mint)] grid place-items-center font-bold text-sm">
+                  {formatTime(q.scheduled_at)}
+                </div>
                 <div className="flex-1">
-                  <p className="font-semibold text-[color:var(--navy)]">{q.patient ? `${q.patient.first_name} ${q.patient.last_name}` : "—"}</p>
+                  <p className="font-semibold text-[color:var(--navy)]">
+                    {q.patient ? `${q.patient.first_name} ${q.patient.last_name}` : "—"}
+                  </p>
                   <p className="text-xs text-muted-foreground">{q.reason || "Rendez-vous"}</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -210,7 +324,9 @@ function SecretaireHome() {
                   >
                     <option value="">— Médecin —</option>
                     {practitioners.map((p) => (
-                      <option key={p.user_id} value={p.user_id}>{p.full_name}</option>
+                      <option key={p.user_id} value={p.user_id}>
+                        {p.full_name}
+                      </option>
                     ))}
                   </select>
                   <button
@@ -226,7 +342,12 @@ function SecretaireHome() {
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="rounded-3xl border bg-card p-7">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="rounded-3xl border bg-card p-7"
+        >
           <h3 className="text-lg font-bold text-[color:var(--navy)]">Prochains rendez-vous</h3>
           <div className="mt-5 space-y-2">
             {(loading ? [] : upcoming).map((u, i) => (
@@ -238,12 +359,18 @@ function SecretaireHome() {
                 className="flex items-center gap-4 p-4 rounded-2xl bg-muted/40"
               >
                 <div className="flex flex-col items-center justify-center size-14 rounded-xl gradient-mint text-[color:var(--navy)]">
-                  <span className="text-xs">{formatTime(u.scheduled_at).split(":" )[0]}h</span>
-                  <span className="text-lg font-bold leading-none">{formatTime(u.scheduled_at).split(":" )[1]}</span>
+                  <span className="text-xs">{formatTime(u.scheduled_at).split(":")[0]}h</span>
+                  <span className="text-lg font-bold leading-none">
+                    {formatTime(u.scheduled_at).split(":")[1]}
+                  </span>
                 </div>
                 <div className="flex-1">
-                  <p className="font-semibold text-[color:var(--navy)]">{u.patient ? `${u.patient.first_name} ${u.patient.last_name}` : "—"}</p>
-                  <p className="text-xs text-muted-foreground">avec {u.practitioner?.full_name || "—"}</p>
+                  <p className="font-semibold text-[color:var(--navy)]">
+                    {u.patient ? `${u.patient.first_name} ${u.patient.last_name}` : "—"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    avec {u.practitioner?.full_name || "—"}
+                  </p>
                 </div>
               </motion.div>
             ))}

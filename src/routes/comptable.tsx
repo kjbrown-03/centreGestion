@@ -23,6 +23,7 @@ function startOfTomorrowIso() {
 type Invoice = {
   id: string;
   invoice_no: string;
+  status: string;
   total: number;
   created_at: string;
   patient?: { first_name: string; last_name: string } | null;
@@ -45,6 +46,7 @@ function ComptableHome() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [report, setReport] = useState<string>("");
+  const [paying, setPaying] = useState<Record<string, boolean>>({});
 
   const todayStart = useMemo(() => startOfTodayIso(), []);
   const tomorrowStart = useMemo(() => startOfTomorrowIso(), []);
@@ -60,7 +62,9 @@ function ComptableHome() {
           sb
             .schema("app")
             .from("invoices")
-            .select(`id, invoice_no, total, created_at, patient:patient_id (first_name, last_name)`) 
+            .select(
+              `id, invoice_no, status, total, created_at, patient:patient_id (first_name, last_name)`,
+            )
             .gte("created_at", todayStart)
             .lt("created_at", tomorrowStart)
             .order("created_at", { ascending: false }),
@@ -96,6 +100,47 @@ function ComptableHome() {
     invoices.reduce((s, f) => s + Number(f.total || 0), 0) - paymentsSum,
     0,
   );
+  const unpaidInvoices = invoices.filter((f) => f.status !== "payee");
+
+  async function recordPayment(
+    invoice: Invoice,
+    method: "cash" | "mobile_money" | "card" | "bank_transfer",
+  ) {
+    setPaying((s) => ({ ...s, [invoice.id]: true }));
+    try {
+      const supabase = await getSupabaseAsync();
+      const authUser = (await supabase.auth.getUser()).data.user;
+      const sb: any = supabase;
+      const amount = Number(invoice.total || 0);
+      const { error } = await sb
+        .schema("app")
+        .from("payments")
+        .insert({
+          invoice_id: invoice.id,
+          method,
+          amount,
+          received_by: authUser?.id ?? null,
+        });
+      if (error) throw error;
+      await sb.schema("app").from("invoices").update({ status: "payee" }).eq("id", invoice.id);
+      setInvoices((prev) => prev.map((f) => (f.id === invoice.id ? { ...f, status: "payee" } : f)));
+      setPayments((prev) => [
+        {
+          id: crypto.randomUUID(),
+          amount,
+          method,
+          received_at: new Date().toISOString(),
+          invoice: { invoice_no: invoice.invoice_no },
+        },
+        ...prev,
+      ]);
+      toast.success("Paiement enregistre.");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Paiement impossible.");
+    } finally {
+      setPaying((s) => ({ ...s, [invoice.id]: false }));
+    }
+  }
 
   async function runReport() {
     try {
@@ -121,10 +166,27 @@ function ComptableHome() {
   return (
     <DashboardLayout allow="comptable" title="Facturation & paiements">
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatCard label="Factures du jour" value={loading ? "…" : String(invoicesCount)} icon={FileText} accent />
-        <StatCard label="Paiements encaissés" value={loading ? "…" : fmt(paymentsSum)} icon={Wallet} />
-        <StatCard label="Mobile Money" value={loading ? "…" : fmt(mobileMoneySum)} icon={CreditCard} />
-        <StatCard label="Reste à payer" value={loading ? "…" : fmt(outstanding)} icon={TrendingUp} />
+        <StatCard
+          label="Factures du jour"
+          value={loading ? "…" : String(invoicesCount)}
+          icon={FileText}
+          accent
+        />
+        <StatCard
+          label="Paiements encaissés"
+          value={loading ? "…" : fmt(paymentsSum)}
+          icon={Wallet}
+        />
+        <StatCard
+          label="Mobile Money"
+          value={loading ? "…" : fmt(mobileMoneySum)}
+          icon={CreditCard}
+        />
+        <StatCard
+          label="Reste à payer"
+          value={loading ? "…" : fmt(outstanding)}
+          icon={TrendingUp}
+        />
       </div>
 
       <div className="mt-8 grid lg:grid-cols-3 gap-6">
@@ -133,7 +195,51 @@ function ComptableHome() {
           animate={{ opacity: 1, y: 0 }}
           className="lg:col-span-2 rounded-3xl border bg-card p-7"
         >
-          <h3 className="text-lg font-bold text-[color:var(--navy)]">Derniers paiements</h3>
+          <h3 className="text-lg font-bold text-[color:var(--navy)]">
+            Factures du jour a encaisser
+          </h3>
+          <div className="mt-5 space-y-2">
+            {(loading ? [] : unpaidInvoices).map((x) => (
+              <div
+                key={x.id}
+                className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl border bg-muted/20"
+              >
+                <div>
+                  <p className="font-semibold text-[color:var(--navy)]">{x.invoice_no}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {x.patient ? `${x.patient.first_name} ${x.patient.last_name}` : "Patient"} -{" "}
+                    {x.status}
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <p className="text-sm font-bold text-[color:var(--navy)] sm:mr-2">
+                    {fmt(Number(x.total || 0))}
+                  </p>
+                  <button
+                    disabled={paying[x.id]}
+                    onClick={() => void recordPayment(x, "cash")}
+                    className="rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                  >
+                    Cash
+                  </button>
+                  <button
+                    disabled={paying[x.id]}
+                    onClick={() => void recordPayment(x, "mobile_money")}
+                    className="rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                  >
+                    Mobile Money
+                  </button>
+                </div>
+              </div>
+            ))}
+            {!loading && unpaidInvoices.length === 0 ? (
+              <div className="rounded-2xl border bg-muted/30 p-5 text-sm text-muted-foreground">
+                Aucune facture en attente aujourd'hui.
+              </div>
+            ) : null}
+          </div>
+
+          <h3 className="mt-8 text-lg font-bold text-[color:var(--navy)]">Derniers paiements</h3>
           <div className="mt-5 space-y-2">
             {(loading ? [] : payments).map((x) => (
               <div
@@ -141,10 +247,14 @@ function ComptableHome() {
                 className="flex items-center justify-between gap-4 p-4 rounded-2xl border bg-muted/20"
               >
                 <div>
-                  <p className="font-semibold text-[color:var(--navy)]">{x.invoice?.invoice_no ?? "—"}</p>
+                  <p className="font-semibold text-[color:var(--navy)]">
+                    {x.invoice?.invoice_no ?? "—"}
+                  </p>
                   <p className="text-xs text-muted-foreground">Mode: {x.method}</p>
                 </div>
-                <p className="text-sm font-bold text-[color:var(--navy)]">{fmt(Number(x.amount || 0))}</p>
+                <p className="text-sm font-bold text-[color:var(--navy)]">
+                  {fmt(Number(x.amount || 0))}
+                </p>
               </div>
             ))}
           </div>
@@ -160,11 +270,29 @@ function ComptableHome() {
           <p className="text-white/70 text-sm">Journée en cours</p>
           <div className="mt-6 space-y-3">
             {[
-              { label: "Montant moyen/facture", value: invoicesCount ? fmt(Math.round((invoices.reduce((s,f)=>s+Number(f.total||0),0))/invoicesCount)) : "—" },
-              { label: "Paiement moyen", value: payments.length ? fmt(Math.round(paymentsSum/payments.length)) : "—" },
-              { label: "Part Mobile Money", value: paymentsSum ? Math.round((mobileMoneySum/paymentsSum)*100)+"%" : "—" },
+              {
+                label: "Montant moyen/facture",
+                value: invoicesCount
+                  ? fmt(
+                      Math.round(
+                        invoices.reduce((s, f) => s + Number(f.total || 0), 0) / invoicesCount,
+                      ),
+                    )
+                  : "—",
+              },
+              {
+                label: "Paiement moyen",
+                value: payments.length ? fmt(Math.round(paymentsSum / payments.length)) : "—",
+              },
+              {
+                label: "Part Mobile Money",
+                value: paymentsSum ? Math.round((mobileMoneySum / paymentsSum) * 100) + "%" : "—",
+              },
             ].map((k) => (
-              <div key={k.label} className="rounded-xl glass-dark p-4 flex items-center justify-between">
+              <div
+                key={k.label}
+                className="rounded-xl glass-dark p-4 flex items-center justify-between"
+              >
                 <p className="text-sm text-white/80">{k.label}</p>
                 <p className="font-semibold">{k.value}</p>
               </div>

@@ -211,6 +211,14 @@ create table if not exists app.prescription_items (
 
 create index if not exists prescription_items_prescription_idx on app.prescription_items(prescription_id);
 
+create table if not exists app.dispensations (
+  id uuid primary key default gen_random_uuid(),
+  prescription_id uuid not null references app.prescriptions(id) on delete cascade,
+  dispensed_by uuid not null references app.profiles(user_id),
+  dispensed_at timestamptz not null default now(),
+  notes text null
+);
+
 -- Lab / Imaging exams
 create table if not exists app.exam_orders (
   id uuid primary key default gen_random_uuid(),
@@ -363,6 +371,7 @@ alter table app.consultations enable row level security;
 alter table app.vitals enable row level security;
 alter table app.prescriptions enable row level security;
 alter table app.prescription_items enable row level security;
+alter table app.dispensations enable row level security;
 alter table app.exam_orders enable row level security;
 alter table app.exam_results enable row level security;
 alter table app.stock_items enable row level security;
@@ -441,6 +450,11 @@ drop policy if exists "prescriptions_write_medecin" on app.prescriptions;
 create policy "prescriptions_write_medecin" on app.prescriptions
 for insert with check (app.has_any_role(array['admin','medecin']::app.user_role[]));
 
+drop policy if exists "prescriptions_update_pharmacien" on app.prescriptions;
+create policy "prescriptions_update_pharmacien" on app.prescriptions
+for update using (app.has_any_role(array['admin','pharmacien']::app.user_role[]))
+with check (app.has_any_role(array['admin','pharmacien']::app.user_role[]));
+
 drop policy if exists "prescription_items_read_staff" on app.prescription_items;
 create policy "prescription_items_read_staff" on app.prescription_items
 for select using (app.has_any_role(array['admin','medecin','pharmacien']::app.user_role[]));
@@ -448,6 +462,14 @@ for select using (app.has_any_role(array['admin','medecin','pharmacien']::app.us
 drop policy if exists "prescription_items_write_medecin" on app.prescription_items;
 create policy "prescription_items_write_medecin" on app.prescription_items
 for insert with check (app.has_any_role(array['admin','medecin']::app.user_role[]));
+
+drop policy if exists "dispensations_read_staff" on app.dispensations;
+create policy "dispensations_read_staff" on app.dispensations
+for select using (app.has_any_role(array['admin','medecin','pharmacien']::app.user_role[]));
+
+drop policy if exists "dispensations_insert_pharmacien" on app.dispensations;
+create policy "dispensations_insert_pharmacien" on app.dispensations
+for insert with check (app.has_any_role(array['admin','pharmacien']::app.user_role[]));
 
 -- Exams
 drop policy if exists "exam_orders_read_staff" on app.exam_orders;
@@ -488,6 +510,15 @@ for select using (app.has_any_role(array['admin','comptable','secretaire','direc
 drop policy if exists "invoices_write_finance" on app.invoices;
 create policy "invoices_write_finance" on app.invoices
 for insert with check (app.has_any_role(array['admin','secretaire','comptable']::app.user_role[]));
+
+drop policy if exists "invoices_write_medecin_consultation" on app.invoices;
+create policy "invoices_write_medecin_consultation" on app.invoices
+for insert with check (app.has_any_role(array['admin','medecin']::app.user_role[]));
+
+drop policy if exists "invoices_update_comptable" on app.invoices;
+create policy "invoices_update_comptable" on app.invoices
+for update using (app.has_any_role(array['admin','comptable']::app.user_role[]))
+with check (app.has_any_role(array['admin','comptable']::app.user_role[]));
 
 drop policy if exists "payments_read_finance" on app.payments;
 create policy "payments_read_finance" on app.payments

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { Calendar, Stethoscope, Users, FileText, Clock } from "lucide-react";
 import { motion } from "framer-motion";
@@ -101,6 +101,7 @@ function MedecinHome() {
   const [notes, setNotes] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState("");
+  const [query, setQuery] = useState("");
 
   const [selectedConsultationId, setSelectedConsultationId] = useState<string>("");
   const [prescItems, setPrescItems] = useState<
@@ -124,12 +125,26 @@ function MedecinHome() {
     return ids.size;
   }, [appointments]);
 
+  // Track ?q= from router to filter agenda
+  const locationSearch = useRouterState({ select: (s: any) => s.location.search });
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(locationSearch ?? "");
+      setQuery(params.get("q") ?? "");
+    } catch {
+      // ignore
+    }
+  }, [locationSearch]);
+
   useEffect(() => {
     let mounted = true;
+    let channel: any;
+    let supabaseForCleanup: any;
     async function run() {
       setLoading(true);
       try {
         const supabase = await getSupabaseAsync();
+        supabaseForCleanup = supabase;
         const authUser = (await supabase.auth.getUser()).data.user;
         if (!authUser?.id) {
           throw new Error("Session introuvable. Veuillez vous reconnecter.");
@@ -138,7 +153,20 @@ function MedecinHome() {
         const start = startOfTodayIso();
         const end = startOfInDaysIso(7);
 
-        const { data, error } = await (supabase as any)
+        // Build query with optional search on patient name or reason
+        const sb: any = supabase;
+        const q = (query ?? "").trim();
+        let patientIds: string[] = [];
+        if (q) {
+          const p = await sb
+            .schema("app")
+            .from("patients")
+            .select("id")
+            .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`);
+          if (!p.error) patientIds = (p.data ?? []).map((r: any) => r.id);
+        }
+
+        let qb = (supabase as any)
           .schema("app")
           .from("appointments")
           .select(
@@ -146,8 +174,17 @@ function MedecinHome() {
           )
           .eq("practitioner_id", authUser.id)
           .gte("scheduled_at", start)
-          .lt("scheduled_at", end)
-          .order("scheduled_at", { ascending: true });
+          .lt("scheduled_at", end);
+
+        if (q) {
+          if (patientIds.length > 0) {
+            qb = qb.in("patient_id", patientIds);
+          } else {
+            qb = qb.ilike("reason", `%${q}%`);
+          }
+        }
+
+        const { data, error } = await qb.order("scheduled_at", { ascending: true });
         if (error) throw error;
 
         if (!mounted) return;
@@ -159,10 +196,25 @@ function MedecinHome() {
       }
     }
     void run();
+    void getSupabaseAsync().then((supabase) => {
+      if (!mounted) return;
+      supabaseForCleanup = supabase;
+      channel = supabase
+        .channel(`doctor_appointments_${Date.now()}`)
+        .on("postgres_changes", { event: "*", schema: "app", table: "appointments" }, () => {
+          void run();
+        })
+        .subscribe();
+    });
     return () => {
       mounted = false;
+      try {
+        if (channel && supabaseForCleanup?.removeChannel) supabaseForCleanup.removeChannel(channel);
+      } catch {
+        // ignore
+      }
     };
-  }, []);
+  }, [query]);
 
   useEffect(() => {
     let alive = true;
@@ -197,35 +249,40 @@ function MedecinHome() {
 
       const patient = appt.patient;
 
-      const [{ data: consultations, error: cErr }, { data: prescriptions, error: pErr }, { data: orders, error: oErr }] =
-        await Promise.all([
-          (supabase as any)
-            .schema("app")
-            .from("consultations")
-            .select("id, started_at, chief_complaint, diagnosis, notes")
-            .eq("patient_id", patient.id)
-            .eq("practitioner_id", authUser.id)
-            .order("started_at", { ascending: false })
-            .limit(15),
-          (supabase as any)
-            .schema("app")
-            .from("prescriptions")
-            .select("id, created_at, status, items:prescription_items(id, medicine_name, dosage, frequency, duration)")
-            .eq("patient_id", patient.id)
-            .eq("practitioner_id", authUser.id)
-            .order("created_at", { ascending: false })
-            .limit(10),
-          (supabase as any)
-            .schema("app")
-            .from("exam_orders")
-            .select(
-              "id, created_at, exam_type, priority, status, result:exam_results(id, result_summary, file_url, created_at)",
-            )
-            .eq("patient_id", patient.id)
-            .eq("practitioner_id", authUser.id)
-            .order("created_at", { ascending: false })
-            .limit(10),
-        ]);
+      const [
+        { data: consultations, error: cErr },
+        { data: prescriptions, error: pErr },
+        { data: orders, error: oErr },
+      ] = await Promise.all([
+        (supabase as any)
+          .schema("app")
+          .from("consultations")
+          .select("id, started_at, chief_complaint, diagnosis, notes")
+          .eq("patient_id", patient.id)
+          .eq("practitioner_id", authUser.id)
+          .order("started_at", { ascending: false })
+          .limit(15),
+        (supabase as any)
+          .schema("app")
+          .from("prescriptions")
+          .select(
+            "id, created_at, status, items:prescription_items(id, medicine_name, dosage, frequency, duration)",
+          )
+          .eq("patient_id", patient.id)
+          .eq("practitioner_id", authUser.id)
+          .order("created_at", { ascending: false })
+          .limit(10),
+        (supabase as any)
+          .schema("app")
+          .from("exam_orders")
+          .select(
+            "id, created_at, exam_type, priority, status, result:exam_results(id, result_summary, file_url, created_at)",
+          )
+          .eq("patient_id", patient.id)
+          .eq("practitioner_id", authUser.id)
+          .order("created_at", { ascending: false })
+          .limit(10),
+      ]);
 
       if (cErr) throw cErr;
       if (pErr) throw pErr;
@@ -277,6 +334,40 @@ function MedecinHome() {
         .single();
       if (error) throw error;
 
+      try {
+        const invoice = await (supabase as any)
+          .schema("app")
+          .from("invoices")
+          .insert({
+            patient_id: selectedAppt.patient.id,
+            consultation_id: data?.id,
+            created_by: authUser.id,
+          })
+          .select("id")
+          .single();
+        const invoiceId = invoice.data?.id;
+        if (!invoice.error && invoiceId) {
+          await (supabase as any).schema("app").from("invoice_items").insert({
+            invoice_id: invoiceId,
+            label: "Consultation medicale",
+            qty: 1,
+            unit_price: 5000,
+          });
+        }
+      } catch {
+        // La facturation peut etre restreinte par RLS selon le schema deploye.
+      }
+
+      try {
+        await (supabase as any)
+          .schema("app")
+          .from("appointments")
+          .update({ status: "termine" })
+          .eq("id", selectedAppt.id);
+      } catch {
+        // ignore
+      }
+
       toast.success("Consultation créée.");
       setChiefComplaint("");
       setSymptoms("");
@@ -294,7 +385,9 @@ function MedecinHome() {
   async function runAiSuggestion() {
     try {
       if (!hasGemini()) {
-        toast.error("Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env pour activer l'assistant.");
+        toast.error(
+          "Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env pour activer l'assistant.",
+        );
         return;
       }
       if (!chiefComplaint && !symptoms && !notes) {
@@ -411,8 +504,17 @@ function MedecinHome() {
   return (
     <DashboardLayout allow="medecin" title="Mes consultations du jour">
       <div className="grid sm:grid-cols-3 gap-5">
-        <StatCard label="RDV aujourd'hui" value={loading ? "…" : String(todayCount)} icon={Calendar} accent />
-        <StatCard label="Patients suivis (aujourd'hui)" value={loading ? "…" : String(followedPatientsCount)} icon={Users} />
+        <StatCard
+          label="RDV aujourd'hui"
+          value={loading ? "…" : String(todayCount)}
+          icon={Calendar}
+          accent
+        />
+        <StatCard
+          label="Patients suivis (aujourd'hui)"
+          value={loading ? "…" : String(followedPatientsCount)}
+          icon={Users}
+        />
         <StatCard
           label="Consultations (dossier ouvert / 30j)"
           value={selectedAppt?.patient ? String(monthlyConsultationsCount) : "-"}
@@ -421,7 +523,11 @@ function MedecinHome() {
       </div>
 
       <div className="mt-8 grid lg:grid-cols-3 gap-6">
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="lg:col-span-2 rounded-3xl border bg-card p-7">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="lg:col-span-2 rounded-3xl border bg-card p-7"
+        >
           <h3 className="text-lg font-bold text-[color:var(--navy)]">Agenda du jour</h3>
           <div className="mt-5 space-y-2">
             {(loading ? [] : appointments).map((a, i) => (
@@ -435,8 +541,12 @@ function MedecinHome() {
                 onClick={() => (a.patient ? void openPatientFile(a) : undefined)}
               >
                 <div className="flex flex-col items-center justify-center size-14 rounded-xl bg-[color:var(--navy)] text-white">
-                  <span className="text-xs text-white/60">{formatTime(a.scheduled_at).split(":")[0]}h</span>
-                  <span className="text-lg font-bold leading-none">{formatTime(a.scheduled_at).split(":")[1]}</span>
+                  <span className="text-xs text-white/60">
+                    {formatTime(a.scheduled_at).split(":")[0]}h
+                  </span>
+                  <span className="text-lg font-bold leading-none">
+                    {formatTime(a.scheduled_at).split(":")[1]}
+                  </span>
                 </div>
                 <div className="flex-1">
                   <p className="font-semibold text-[color:var(--navy)]">
@@ -444,11 +554,15 @@ function MedecinHome() {
                   </p>
                   <p className="text-sm text-muted-foreground">{a.reason ?? "Consultation"}</p>
                 </div>
-                <span className={`text-xs font-medium px-3 py-1 rounded-full ${
-                  a.status === "confirme" || a.status === "confirmé"
-                    ? "bg-[color:var(--mint)]/20 text-[color:var(--navy)]"
-                    : "bg-amber-100 text-amber-700"
-                }`}>{a.status}</span>
+                <span
+                  className={`text-xs font-medium px-3 py-1 rounded-full ${
+                    a.status === "confirme" || a.status === "confirmé"
+                      ? "bg-[color:var(--mint)]/20 text-[color:var(--navy)]"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {a.status}
+                </span>
               </motion.div>
             ))}
 
@@ -460,7 +574,12 @@ function MedecinHome() {
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="rounded-3xl border bg-card p-7">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="rounded-3xl border bg-card p-7"
+        >
           <h3 className="text-lg font-bold text-[color:var(--navy)]">Notes rapides</h3>
           <div className="mt-5 space-y-3">
             {[
@@ -478,7 +597,10 @@ function MedecinHome() {
       </div>
 
       {selectedAppt?.patient ? (
-        <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={() => setSelectedAppt(null)}>
+        <div
+          className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4"
+          onClick={() => setSelectedAppt(null)}
+        >
           <div
             className="w-full max-w-4xl rounded-3xl border bg-background shadow-xl"
             onClick={(e) => e.stopPropagation()}
@@ -486,7 +608,8 @@ function MedecinHome() {
             <div className="p-6 border-b flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-[color:var(--navy)]">
-                  Dossier patient · {selectedAppt.patient.first_name} {selectedAppt.patient.last_name}
+                  Dossier patient · {selectedAppt.patient.first_name}{" "}
+                  {selectedAppt.patient.last_name}
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   {selectedAppt.patient.phone ? `Téléphone: ${selectedAppt.patient.phone}` : ""}
@@ -521,7 +644,9 @@ function MedecinHome() {
                             <div className="font-semibold text-[color:var(--navy)]">
                               {new Date(c.started_at).toLocaleString()}
                             </div>
-                            <span className="text-xs text-muted-foreground">#{c.id.slice(0, 8)}</span>
+                            <span className="text-xs text-muted-foreground">
+                              #{c.id.slice(0, 8)}
+                            </span>
                           </div>
                           <div className="mt-2 text-sm text-muted-foreground">
                             {c.chief_complaint ? `Motif: ${c.chief_complaint}` : ""}
@@ -532,7 +657,9 @@ function MedecinHome() {
                         </div>
                       ))
                     ) : (
-                      <div className="text-sm text-muted-foreground">Aucune consultation trouvée.</div>
+                      <div className="text-sm text-muted-foreground">
+                        Aucune consultation trouvée.
+                      </div>
                     )}
                   </div>
                 </div>
@@ -546,16 +673,24 @@ function MedecinHome() {
                       patientExamOrders.map((o) => (
                         <div key={o.id} className="rounded-2xl border p-4">
                           <div className="flex items-center justify-between gap-3">
-                            <div className="font-semibold text-[color:var(--navy)]">{o.exam_type}</div>
+                            <div className="font-semibold text-[color:var(--navy)]">
+                              {o.exam_type}
+                            </div>
                             <span className="text-xs text-muted-foreground">
                               {new Date(o.created_at).toLocaleDateString()} · {o.status}
                             </span>
                           </div>
-                          <div className="mt-2 text-sm text-muted-foreground">Priorité: {o.priority}</div>
+                          <div className="mt-2 text-sm text-muted-foreground">
+                            Priorité: {o.priority}
+                          </div>
                           {o.result?.result_summary ? (
-                            <div className="mt-2 text-sm text-[color:var(--navy)]">Résultat: {o.result.result_summary}</div>
+                            <div className="mt-2 text-sm text-[color:var(--navy)]">
+                              Résultat: {o.result.result_summary}
+                            </div>
                           ) : (
-                            <div className="mt-2 text-sm text-muted-foreground">Résultat non disponible.</div>
+                            <div className="mt-2 text-sm text-muted-foreground">
+                              Résultat non disponible.
+                            </div>
                           )}
                         </div>
                       ))
@@ -577,7 +712,9 @@ function MedecinHome() {
                         <div key={p.id} className="rounded-2xl border p-4">
                           <div className="flex items-center justify-between gap-3">
                             <div className="font-semibold text-[color:var(--navy)]">{p.status}</div>
-                            <span className="text-xs text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(p.created_at).toLocaleDateString()}
+                            </span>
                           </div>
                           <div className="mt-2 space-y-1">
                             {(p.items ?? []).slice(0, 5).map((it) => (
@@ -638,7 +775,9 @@ function MedecinHome() {
                           IA: Suggérer traitement
                         </button>
                         {aiSuggestion ? (
-                          <span className="text-[10px] text-muted-foreground">Suggestion prête (voir champ Diagnostic)</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            Suggestion prête (voir champ Diagnostic)
+                          </span>
                         ) : null}
                       </div>
                       <button
@@ -653,7 +792,8 @@ function MedecinHome() {
 
                     <div className="space-y-2">
                       <div className="flex gap-2 items-center text-sm font-semibold text-[color:var(--navy)]">
-                        <Stethoscope className="size-4" /> Prescription (sur la consultation sélectionnée)
+                        <Stethoscope className="size-4" /> Prescription (sur la consultation
+                        sélectionnée)
                       </div>
                       {prescItems.map((it, idx) => (
                         <div key={idx} className="rounded-2xl border p-3 space-y-2">
@@ -661,7 +801,9 @@ function MedecinHome() {
                             value={it.medicine_name}
                             onChange={(e) =>
                               setPrescItems((prev) =>
-                                prev.map((p, i) => (i === idx ? { ...p, medicine_name: e.target.value } : p)),
+                                prev.map((p, i) =>
+                                  i === idx ? { ...p, medicine_name: e.target.value } : p,
+                                ),
                               )
                             }
                             className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
@@ -677,7 +819,11 @@ function MedecinHome() {
                             <input
                               value={it.dosage}
                               onChange={(e) =>
-                                setPrescItems((prev) => prev.map((p, i) => (i === idx ? { ...p, dosage: e.target.value } : p)))
+                                setPrescItems((prev) =>
+                                  prev.map((p, i) =>
+                                    i === idx ? { ...p, dosage: e.target.value } : p,
+                                  ),
+                                )
                               }
                               placeholder="Dosage"
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
@@ -686,7 +832,9 @@ function MedecinHome() {
                               value={it.frequency}
                               onChange={(e) =>
                                 setPrescItems((prev) =>
-                                  prev.map((p, i) => (i === idx ? { ...p, frequency: e.target.value } : p)),
+                                  prev.map((p, i) =>
+                                    i === idx ? { ...p, frequency: e.target.value } : p,
+                                  ),
                                 )
                               }
                               placeholder="Fréquence"
@@ -695,7 +843,11 @@ function MedecinHome() {
                             <input
                               value={it.duration}
                               onChange={(e) =>
-                                setPrescItems((prev) => prev.map((p, i) => (i === idx ? { ...p, duration: e.target.value } : p)))
+                                setPrescItems((prev) =>
+                                  prev.map((p, i) =>
+                                    i === idx ? { ...p, duration: e.target.value } : p,
+                                  ),
+                                )
                               }
                               placeholder="Durée"
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none col-span-2"
@@ -703,7 +855,9 @@ function MedecinHome() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => setPrescItems((prev) => prev.filter((_, i) => i !== idx))}
+                            onClick={() =>
+                              setPrescItems((prev) => prev.filter((_, i) => i !== idx))
+                            }
                             disabled={prescItems.length <= 1}
                             className="text-xs underline text-muted-foreground disabled:opacity-40"
                           >
@@ -713,7 +867,12 @@ function MedecinHome() {
                       ))}
                       <button
                         type="button"
-                        onClick={() => setPrescItems((p) => [...p, { medicine_name: "", dosage: "", frequency: "", duration: "" }])}
+                        onClick={() =>
+                          setPrescItems((p) => [
+                            ...p,
+                            { medicine_name: "", dosage: "", frequency: "", duration: "" },
+                          ])
+                        }
                         className="w-full rounded-2xl border py-2.5 text-sm hover:bg-muted"
                       >
                         Ajouter un médicament

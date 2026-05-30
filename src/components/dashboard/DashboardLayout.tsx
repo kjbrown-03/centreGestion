@@ -5,8 +5,20 @@ import { useAuth, type Role } from "@/lib/store";
 import { roleLabel } from "@/lib/roles";
 import { getSupabaseAsync } from "@/lib/supabase";
 import {
-  Activity, LayoutDashboard, Pill, Users, Calendar, HeartPulse,
-  LogOut, Bell, Search, Stethoscope, ClipboardList, FileText,
+  Activity,
+  LayoutDashboard,
+  Pill,
+  Users,
+  Calendar,
+  HeartPulse,
+  LogOut,
+  Bell,
+  Search,
+  Stethoscope,
+  ClipboardList,
+  FileText,
+  Menu,
+  X,
 } from "lucide-react";
 
 type NavItem = { to: string; label: string; icon: React.ComponentType<{ className?: string }> };
@@ -17,27 +29,13 @@ const NAV: Record<Role, NavItem[]> = {
     { to: "/admin/utilisateurs", label: "Utilisateurs", icon: Users },
     { to: "/admin/pharmacie", label: "Pharmacie", icon: Pill },
   ],
-  medecin: [
-    { to: "/medecin", label: "Consultations", icon: Stethoscope },
-  ],
-  infirmier: [
-    { to: "/infirmier", label: "Soins du jour", icon: HeartPulse },
-  ],
-  secretaire: [
-    { to: "/secretaire", label: "Rendez-vous", icon: Calendar },
-  ],
-  comptable: [
-    { to: "/comptable", label: "Facturation", icon: FileText },
-  ],
-  pharmacien: [
-    { to: "/pharmacien", label: "Pharmacie", icon: Pill },
-  ],
-  directeur: [
-    { to: "/directeur", label: "Tableau de bord", icon: LayoutDashboard },
-  ],
-  patient: [
-    { to: "/patient", label: "Mon Espace", icon: LayoutDashboard },
-  ],
+  medecin: [{ to: "/medecin", label: "Consultations", icon: Stethoscope }],
+  infirmier: [{ to: "/infirmier", label: "Soins du jour", icon: HeartPulse }],
+  secretaire: [{ to: "/secretaire", label: "Rendez-vous", icon: Calendar }],
+  comptable: [{ to: "/comptable", label: "Facturation", icon: FileText }],
+  pharmacien: [{ to: "/pharmacien", label: "Pharmacie", icon: Pill }],
+  directeur: [{ to: "/directeur", label: "Tableau de bord", icon: LayoutDashboard }],
+  patient: [{ to: "/patient", label: "Mon Espace", icon: LayoutDashboard }],
 };
 
 export function DashboardLayout({
@@ -58,6 +56,8 @@ export function DashboardLayout({
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Array<{ id: string; at: string; text: string }>>([]);
+  const [searchText, setSearchText] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const canSeeAudit = useMemo(() => user?.role === "admin", [user?.role]);
 
@@ -71,12 +71,54 @@ export function DashboardLayout({
     }
   }, [user, allow, navigate]);
 
+  // Prefill search from ?q=
+  const locationSearch = useRouterState({ select: (s: any) => s.location.search });
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(locationSearch ?? "");
+      const q = params.get("q") ?? "";
+      setSearchText(q);
+    } catch {
+      // ignore
+    }
+  }, [locationSearch]);
+
+  function defaultSearchRouteForRole(r: Role): string {
+    switch (r) {
+      case "admin":
+        return "/admin/utilisateurs";
+      case "secretaire":
+        return "/secretaire";
+      case "medecin":
+        return "/medecin";
+      case "pharmacien":
+        return "/pharmacien";
+      case "directeur":
+        return "/directeur";
+      case "comptable":
+        return "/comptable";
+      case "infirmier":
+        return "/infirmier";
+      case "patient":
+        return "/patient";
+      default:
+        return "/";
+    }
+  }
+
+  function runSearch() {
+    const q = (searchText ?? "").trim();
+    const dest = defaultSearchRouteForRole(user.role as Role);
+    navigate({ to: `${dest}${q ? `?q=${encodeURIComponent(q)}` : ""}` });
+  }
+
   useEffect(() => {
     if (!notifOpen) return;
     if (!user) return;
 
     let alive = true;
     let channel: any;
+    let supabaseForCleanup: any;
 
     async function loadAndSubscribe() {
       setNotifError(null);
@@ -88,12 +130,14 @@ export function DashboardLayout({
       setNotifLoading(true);
       try {
         const supabase = await getSupabaseAsync();
+        supabaseForCleanup = supabase;
         const sb: any = supabase;
 
         const { data, error } = await sb
           .schema("app")
           .from("audit_logs")
-          .select(`
+          .select(
+            `
             id,
             created_at,
             action,
@@ -102,7 +146,8 @@ export function DashboardLayout({
             profiles:actor_user_id (
               full_name
             )
-          `)
+          `,
+          )
           .order("created_at", { ascending: false })
           .limit(20);
         if (error) throw error;
@@ -119,7 +164,7 @@ export function DashboardLayout({
         if (alive) setMessages(mapped);
 
         channel = supabase
-          .channel("audit_logs_notifications")
+          .channel(`audit_logs_notifications_${user.email}_${Date.now()}`)
           .on(
             "postgres_changes",
             { event: "INSERT", schema: "app", table: "audit_logs" },
@@ -147,11 +192,7 @@ export function DashboardLayout({
     return () => {
       alive = false;
       try {
-        if (channel) {
-          const supabaseAny = (channel as any).supabase ?? null;
-          // Best-effort: remove channel if possible
-          if (supabaseAny?.removeChannel) supabaseAny.removeChannel(channel);
-        }
+        if (channel && supabaseForCleanup?.removeChannel) supabaseForCleanup.removeChannel(channel);
       } catch {
         // ignore
       }
@@ -173,7 +214,9 @@ export function DashboardLayout({
           2KC
         </Link>
 
-        <p className="text-xs uppercase tracking-widest text-white/40 mb-3">{roleLabel(user.role)}</p>
+        <p className="text-xs uppercase tracking-widest text-white/40 mb-3">
+          {roleLabel(user.role)}
+        </p>
         <nav className="space-y-1">
           {items.map((it) => {
             const active = path === it.to;
@@ -182,7 +225,9 @@ export function DashboardLayout({
                 key={it.to}
                 to={it.to}
                 className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
-                  active ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/5 hover:text-white"
+                  active
+                    ? "bg-white/10 text-white"
+                    : "text-white/70 hover:bg-white/5 hover:text-white"
                 }`}
               >
                 {active && (
@@ -209,7 +254,10 @@ export function DashboardLayout({
             </div>
           </div>
           <button
-            onClick={() => { logout(); navigate({ to: "/" }); }}
+            onClick={() => {
+              logout();
+              navigate({ to: "/" });
+            }}
             className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 text-white/70 hover:text-white hover:bg-white/5 py-2 text-sm transition"
           >
             <LogOut className="size-4" /> Déconnexion
@@ -217,19 +265,108 @@ export function DashboardLayout({
         </div>
       </aside>
 
+      <AnimatePresence>
+        {mobileNavOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/50 md:hidden"
+            onClick={() => setMobileNavOpen(false)}
+          >
+            <motion.aside
+              initial={{ x: -280 }}
+              animate={{ x: 0 }}
+              exit={{ x: -280 }}
+              transition={{ type: "spring", stiffness: 260, damping: 28 }}
+              className="h-full w-[min(82vw,280px)] bg-[color:var(--navy)] text-white p-5 flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-8">
+                <Link
+                  to="/"
+                  className="flex items-center gap-2 font-display font-bold text-xl"
+                  onClick={() => setMobileNavOpen(false)}
+                >
+                  <span className="size-9 rounded-xl gradient-mint grid place-items-center text-[color:var(--navy)]">
+                    <Activity className="size-5" strokeWidth={2.5} />
+                  </span>
+                  2KC
+                </Link>
+                <button
+                  type="button"
+                  className="size-9 rounded-xl border border-white/10 grid place-items-center"
+                  onClick={() => setMobileNavOpen(false)}
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+              <p className="text-xs uppercase tracking-widest text-white/40 mb-3">
+                {roleLabel(user.role)}
+              </p>
+              <nav className="space-y-1">
+                {items.map((it) => {
+                  const active = path === it.to;
+                  return (
+                    <Link
+                      key={it.to}
+                      to={it.to}
+                      onClick={() => setMobileNavOpen(false)}
+                      className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${
+                        active
+                          ? "bg-white/10 text-white"
+                          : "text-white/70 hover:bg-white/5 hover:text-white"
+                      }`}
+                    >
+                      <it.icon className="size-4" />
+                      {it.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+              <button
+                onClick={() => {
+                  logout();
+                  setMobileNavOpen(false);
+                  navigate({ to: "/" });
+                }}
+                className="mt-auto w-full inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 text-white/70 hover:text-white hover:bg-white/5 py-2 text-sm transition"
+              >
+                <LogOut className="size-4" /> Deconnexion
+              </button>
+            </motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main */}
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-30 bg-background/80 backdrop-blur border-b">
-          <div className="flex items-center justify-between gap-4 px-6 lg:px-10 py-4">
-            <div>
+          <div className="flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-10 py-3 sm:py-4">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              className="md:hidden size-10 rounded-xl border bg-card grid place-items-center text-[color:var(--navy)]"
+              aria-label="Ouvrir le menu"
+            >
+              <Menu className="size-5" />
+            </button>
+            <div className="min-w-0 flex-1">
               <p className="text-xs text-muted-foreground">{roleLabel(user.role)}</p>
-              <h1 className="text-xl font-bold text-[color:var(--navy)]">{title}</h1>
+              <h1 className="text-base sm:text-xl font-bold text-[color:var(--navy)] truncate">
+                {title}
+              </h1>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <div className="relative hidden sm:block">
                 <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                   placeholder="Rechercher..."
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") runSearch();
+                  }}
                   className="pl-9 pr-4 py-2 rounded-xl border bg-card text-sm w-64 outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
                 />
               </div>
@@ -239,8 +376,8 @@ export function DashboardLayout({
                   onClick={() => setNotifOpen((v) => !v)}
                   className="relative size-10 rounded-xl border bg-card grid place-items-center text-[color:var(--navy)] hover:bg-muted transition"
                 >
-                <Bell className="size-4" />
-                <span className="absolute top-2 right-2 size-2 rounded-full bg-[color:var(--mint)]" />
+                  <Bell className="size-4" />
+                  <span className="absolute top-2 right-2 size-2 rounded-full bg-[color:var(--mint)]" />
                 </button>
 
                 <AnimatePresence>
@@ -250,11 +387,13 @@ export function DashboardLayout({
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 8 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 mt-2 w-[360px] max-w-[90vw] rounded-2xl border bg-card shadow-lg overflow-hidden"
+                      className="absolute right-0 mt-2 w-[360px] max-w-[calc(100vw-2rem)] rounded-2xl border bg-card shadow-lg overflow-hidden"
                     >
                       <div className="px-4 py-3 border-b flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-semibold text-[color:var(--navy)]">Notifications</p>
+                          <p className="text-sm font-semibold text-[color:var(--navy)]">
+                            Notifications
+                          </p>
                           <p className="text-xs text-muted-foreground">
                             {canSeeAudit ? "Temps réel (audit)" : "Non disponible pour ce rôle"}
                           </p>
@@ -269,8 +408,12 @@ export function DashboardLayout({
                       </div>
 
                       <div className="max-h-[420px] overflow-auto">
-                        {notifLoading && <div className="px-4 py-3 text-sm text-muted-foreground">Chargement…</div>}
-                        {notifError && <div className="px-4 py-3 text-sm text-red-600">{notifError}</div>}
+                        {notifLoading && (
+                          <div className="px-4 py-3 text-sm text-muted-foreground">Chargement…</div>
+                        )}
+                        {notifError && (
+                          <div className="px-4 py-3 text-sm text-red-600">{notifError}</div>
+                        )}
 
                         {!notifLoading && !notifError && messages.length === 0 && (
                           <div className="px-4 py-6 text-sm text-muted-foreground">
@@ -282,7 +425,9 @@ export function DashboardLayout({
                           <ul className="divide-y">
                             {messages.map((m) => (
                               <li key={m.id} className="px-4 py-3">
-                                <p className="text-sm text-[color:var(--navy)] break-words">{m.text}</p>
+                                <p className="text-sm text-[color:var(--navy)] break-words">
+                                  {m.text}
+                                </p>
                                 <p className="text-xs text-muted-foreground mt-1">{m.at}</p>
                               </li>
                             ))}
@@ -304,7 +449,7 @@ export function DashboardLayout({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className="p-6 lg:p-10"
+            className="p-4 sm:p-6 lg:p-10"
           >
             {children}
           </motion.div>
@@ -315,8 +460,18 @@ export function DashboardLayout({
 }
 
 export function StatCard({
-  label, value, hint, icon: Icon, accent,
-}: { label: string; value: string | number; hint?: string; icon: React.ComponentType<{ className?: string }>; accent?: boolean; }) {
+  label,
+  value,
+  hint,
+  icon: Icon,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accent?: boolean;
+}) {
   return (
     <motion.div
       whileHover={{ y: -4 }}
@@ -324,12 +479,22 @@ export function StatCard({
     >
       <div className="flex items-center justify-between">
         <p className={`text-sm ${accent ? "text-white/70" : "text-muted-foreground"}`}>{label}</p>
-        <span className={`size-10 rounded-xl grid place-items-center ${accent ? "gradient-mint text-[color:var(--navy)]" : "bg-muted text-[color:var(--navy)]"}`}>
+        <span
+          className={`size-10 rounded-xl grid place-items-center ${accent ? "gradient-mint text-[color:var(--navy)]" : "bg-muted text-[color:var(--navy)]"}`}
+        >
           <Icon className="size-5" />
         </span>
       </div>
-      <p className={`mt-4 font-display text-4xl font-bold ${accent ? "" : "text-[color:var(--navy)]"}`}>{value}</p>
-      {hint && <p className={`mt-1 text-xs ${accent ? "text-white/60" : "text-muted-foreground"}`}>{hint}</p>}
+      <p
+        className={`mt-4 font-display text-4xl font-bold ${accent ? "" : "text-[color:var(--navy)]"}`}
+      >
+        {value}
+      </p>
+      {hint && (
+        <p className={`mt-1 text-xs ${accent ? "text-white/60" : "text-muted-foreground"}`}>
+          {hint}
+        </p>
+      )}
     </motion.div>
   );
 }
