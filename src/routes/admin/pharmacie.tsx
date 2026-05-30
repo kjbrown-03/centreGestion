@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { type Medicine, useAuditLog } from "@/lib/store";
-import { getSupabase } from "@/lib/supabase";
+import { getSupabaseAsync } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin/pharmacie")({
   component: Pharmacie,
@@ -37,6 +37,23 @@ const empty: Omit<Medicine, "id"> = {
   image: "",
 };
 
+function catalogAsMedicines(): Medicine[] {
+  return MEDICINE_CATALOG.map((m) => ({
+    id: `catalog-${m.name}`,
+    ...m,
+    image: DEFAULT_IMAGE,
+  }));
+}
+
+function errorMessage(err: unknown, fallback: string) {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === "object") {
+    const maybe = err as { message?: string; error_description?: string; details?: string; hint?: string };
+    return maybe.message || maybe.error_description || maybe.details || maybe.hint || fallback;
+  }
+  return fallback;
+}
+
 function Pharmacie() {
   const auditAdd = useAuditLog((s) => s.add);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
@@ -50,7 +67,7 @@ function Pharmacie() {
     setLoading(true);
     setError(null);
     try {
-      const supabase = getSupabase();
+      const supabase = await getSupabaseAsync();
       const { data, error: e } = await (supabase as any)
         .schema("app")
         .from("stock_items")
@@ -69,9 +86,10 @@ function Pharmacie() {
         expiry: r.expiry_date ?? "",
         image: DEFAULT_IMAGE,
       }));
-      setMedicines(mapped);
+      setMedicines(mapped.length ? mapped : catalogAsMedicines());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur lors du chargement du stock");
+      setMedicines(catalogAsMedicines());
+      setError(errorMessage(err, "Stock Supabase indisponible. Le catalogue local reste utilisable."));
     } finally {
       setLoading(false);
     }
@@ -100,7 +118,7 @@ function Pharmacie() {
   async function handleRemove(id: string) {
     setError(null);
     try {
-      const supabase = getSupabase();
+      const supabase = await getSupabaseAsync();
       const before = medicines.find((x) => x.id === id) ?? null;
       const { error: delErr } = await (supabase as any)
         .schema("app")
@@ -111,14 +129,14 @@ function Pharmacie() {
       setMedicines((s) => s.filter((x) => x.id !== id));
       auditAdd({ actorEmail: null, actorRole: null, action: "pharmacy.remove", target: id, meta: { before } });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur");
+      setError(errorMessage(err, "Suppression impossible."));
     }
   }
 
   async function saveMedicine(data: Omit<Medicine, "id">) {
     setError(null);
     try {
-      const supabase = getSupabase();
+      const supabase = await getSupabaseAsync();
       const { data: auth } = await supabase.auth.getUser();
       const actorId = auth.user?.id ?? null;
 
@@ -188,7 +206,18 @@ function Pharmacie() {
 
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur");
+      const newMed: Medicine = {
+        id: editing?.id ?? `local-${crypto.randomUUID()}`,
+        ...data,
+        image: DEFAULT_IMAGE,
+      };
+      setMedicines((s) =>
+        editing ? s.map((x) => (x.id === editing.id ? newMed : x)) : [newMed, ...s],
+      );
+      setOpen(false);
+      setError(
+        `${errorMessage(err, "Enregistrement Supabase impossible.")} Le médicament est affiché localement; reconnectez-vous avec une session admin Supabase pour le persister.`,
+      );
     }
   }
 

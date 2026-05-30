@@ -28,14 +28,22 @@ function json(status: number, payload: unknown) {
 }
 
 function generatePassword(length = 14) {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const specials = "@#$%";
-  const all = alphabet + specials;
+  const all = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   let out = "";
   for (let i = 0; i < bytes.length; i++) out += all[bytes[i] % all.length];
-  if (![...out].some((c) => specials.includes(c))) out = out.slice(0, -1) + specials[bytes[0] % specials.length];
   return out;
+}
+
+async function findUserByEmail(adminClient: any, email: string) {
+  for (let page = 1; page <= 10; page++) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw error;
+    const found = data?.users?.find((u: any) => (u.email ?? "").toLowerCase() === email);
+    if (found) return found;
+    if (!data?.users || data.users.length < 1000) break;
+  }
+  return null;
 }
 
 function base64(input: string) {
@@ -248,26 +256,45 @@ Deno.serve(async (req: Request) => {
       blood_type: body.blood_type ?? "",
     };
 
-    const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: userMetadata,
-    });
-    if (createErr) return json(400, { error: createErr.message });
+    const existingUser = await findUserByEmail(adminClient, email);
+    const userId = existingUser?.id;
+    const result = userId
+      ? await adminClient.auth.admin.updateUserById(userId, {
+          password,
+          email_confirm: true,
+          user_metadata: { ...(existingUser.user_metadata ?? {}), ...userMetadata },
+        })
+      : await adminClient.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: userMetadata,
+        });
 
-    await (adminClient as any).schema("app").from("profiles").upsert({
-      user_id: created.user?.id,
-      role,
-      full_name: fullName,
-    }, { onConflict: "user_id" });
+    if (result.error) return json(400, { error: result.error.message });
+    const authUser = result.data?.user;
+    if (!authUser?.id) return json(500, { error: "Utilisateur auth introuvable apres creation." });
+
+    const profileWrite = await (adminClient as any)
+      .schema("app")
+      .from("profiles")
+      .upsert(
+        {
+          user_id: authUser.id,
+          role,
+          full_name: fullName,
+        },
+        { onConflict: "user_id" },
+      );
+    if (profileWrite.error) return json(400, { error: profileWrite.error.message });
 
     const mail = await sendPasswordEmail({ to: email, fullName, role, password });
     return json(200, {
-      user: { id: created.user?.id ?? null, email: created.user?.email ?? email },
+      user: { id: authUser.id, email: authUser.email ?? email },
       password,
       emailSent: mail.sent,
       emailError: mail.error,
+      existed: !!existingUser,
     });
   } catch (e) {
     return json(500, { error: (e as any)?.message ?? "Unknown error" });
