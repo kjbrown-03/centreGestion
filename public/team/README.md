@@ -6,3 +6,4 @@ Place the doctor photos here with these exact filenames:
 - djapp-chloe-patient.png
 
 The site already uses these paths in the displayed order.
+

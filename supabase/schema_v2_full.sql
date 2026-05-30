@@ -1,4 +1,4 @@
-﻿-- 2KC Centre de SantÃ© â€” Supabase/PostgreSQL schema (v2, complete)
+﻿-- 2KC Centre de Santé - Supabase/PostgreSQL schema (v2, complete)
 -- Copy/paste into Supabase SQL editor.
 
 create extension if not exists pgcrypto;
@@ -56,28 +56,32 @@ create trigger set_profiles_updated_at
 before update on app.profiles
 for each row execute function app.set_updated_at();
 
-create or replace function app.is_admin() returns boolean
-language sql stable as $$
+create or replace function app.current_role() returns app.user_role
+language sql stable security definer
+set search_path = app, public
+as $$
   select coalesce(
+    (select p.role from app.profiles p where p.user_id = auth.uid()),
     nullif((current_setting('request.jwt.claims', true)::jsonb -> 'user_metadata' ->> 'role'), '')::app.user_role,
     'patient'::app.user_role
-  ) = 'admin'::app.user_role;
+  );
+$$;
+
+grant execute on function app.current_role() to anon, authenticated;
+
+create or replace function app.is_admin() returns boolean
+language sql stable as $$
+  select app.current_role() = 'admin'::app.user_role;
 $$;
 
 create or replace function app.has_role(r app.user_role) returns boolean
 language sql stable as $$
-  select coalesce(
-    nullif((current_setting('request.jwt.claims', true)::jsonb -> 'user_metadata' ->> 'role'), '')::app.user_role,
-    'patient'::app.user_role
-  ) = r;
+  select app.current_role() = r;
 $$;
 
 create or replace function app.has_any_role(roles app.user_role[]) returns boolean
 language sql stable as $$
-  select coalesce(
-    nullif((current_setting('request.jwt.claims', true)::jsonb -> 'user_metadata' ->> 'role'), '')::app.user_role,
-    'patient'::app.user_role
-  ) = any(roles);
+  select app.current_role() = any(roles);
 $$;
 
 -- Auto-create profile on signup
@@ -117,8 +121,20 @@ begin
       v_blood := nullif(new.raw_user_meta_data->>'blood_type','');
       if v_blood not in ('A+','A-','B+','B-','AB+','AB-','O+','O-') then v_blood := null; end if;
 
-      insert into app.patients (first_name, last_name, sex, birth_date, blood_type, created_by)
-      values (v_first, v_last, v_sex, v_birth, v_blood, new.id)
+      insert into app.patients (
+        first_name, last_name, sex, birth_date, blood_type, phone, address,
+        allergies, chronic_conditions, emergency_contact_name, emergency_contact_phone, created_by
+      )
+      values (
+        v_first, v_last, v_sex, v_birth, v_blood,
+        nullif(new.raw_user_meta_data->>'phone',''),
+        nullif(new.raw_user_meta_data->>'address',''),
+        coalesce(array(select jsonb_array_elements_text(coalesce(new.raw_user_meta_data->'allergies', '[]'::jsonb))), '{}'),
+        coalesce(array(select jsonb_array_elements_text(coalesce(new.raw_user_meta_data->'chronic_conditions', '[]'::jsonb))), '{}'),
+        nullif(new.raw_user_meta_data->>'emergency_contact_name',''),
+        nullif(new.raw_user_meta_data->>'emergency_contact_phone',''),
+        new.id
+      )
       returning id into v_pid;
 
       insert into app.patient_accounts (user_id, patient_id)
@@ -219,6 +235,57 @@ create table if not exists app.patient_accounts (
   patient_id uuid not null unique references app.patients(id) on delete cascade,
   created_at timestamptz not null default now()
 );
+
+create or replace function app.ensure_patient_account_self()
+returns uuid
+language plpgsql
+security definer
+set search_path = app, public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_profile app.profiles%rowtype;
+  v_patient_id uuid;
+  v_full_name text;
+  v_first text;
+  v_last text;
+begin
+  if v_uid is null then
+    raise exception 'Utilisateur non connecté.';
+  end if;
+
+  select * into v_profile
+  from app.profiles
+  where user_id = v_uid;
+
+  if not found or v_profile.role <> 'patient'::app.user_role then
+    raise exception 'Ce compte n''est pas un compte patient.';
+  end if;
+
+  select patient_id into v_patient_id
+  from app.patient_accounts
+  where user_id = v_uid;
+
+  if v_patient_id is not null then
+    return v_patient_id;
+  end if;
+
+  v_full_name := coalesce(nullif(v_profile.full_name, ''), 'Patient Inscrit');
+  v_first := coalesce(nullif(split_part(v_full_name, ' ', 1), ''), 'Patient');
+  v_last := coalesce(nullif(regexp_replace(v_full_name, '^[^ ]+\s*', ''), ''), 'Inscrit');
+
+  insert into app.patients (first_name, last_name, created_by)
+  values (v_first, v_last, v_uid)
+  returning id into v_patient_id;
+
+  insert into app.patient_accounts (user_id, patient_id)
+  values (v_uid, v_patient_id)
+  on conflict (user_id) do update set patient_id = excluded.patient_id;
+
+  return v_patient_id;
+end $$;
+
+grant execute on function app.ensure_patient_account_self() to authenticated;
 
 -- ===================== APPOINTMENTS =====================
 
@@ -595,6 +662,23 @@ create policy patients_update_staff on app.patients
 for update using (app.has_any_role(array['admin','secretaire']::app.user_role[]))
 with check (app.has_any_role(array['admin','secretaire']::app.user_role[]));
 
+drop policy if exists patients_update_self on app.patients;
+create policy patients_update_self on app.patients
+for update using (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.patients.id
+  )
+)
+with check (
+  exists (
+    select 1 from app.patient_accounts pa
+    where pa.user_id = auth.uid()
+      and pa.patient_id = app.patients.id
+  )
+);
+
 -- patient_accounts: admin only
 drop policy if exists patient_accounts_admin_only on app.patient_accounts;
 create policy patient_accounts_admin_only on app.patient_accounts
@@ -900,7 +984,7 @@ for insert with check (auth.uid() is not null);
 insert into app.patients (patient_code, first_name, last_name, sex, birth_date, phone, address)
 values
   ('2KC00000000', 'Chantal', 'Ndzi', 'F', '1994-06-12', '693904197', 'Douala'),
-  ('2KC00000001', 'Junior', 'Kemajou', 'M', '1988-10-02', '693904197', 'YaoundÃ©'),
+  ('2KC00000001', 'Junior', 'Kemajou', 'M', '1988-10-02', '693904197', 'Yaoundé'),
   ('2KC00000002', 'Estelle', 'Nkom', 'F', '2001-01-19', '693904197', 'Bafoussam'),
   ('2KC00000003', 'Arnaud', 'Mbida', 'M', '1979-04-21', '693904197', 'Garoua'),
   ('2KC00000004', 'Prudence', 'Etoa', 'F', '1999-09-09', '693904197', 'Bertoua')
@@ -937,7 +1021,7 @@ from app.profiles;
 
 grant select on public.profiles to anon, authenticated;
 
--- ===================== MESSAGES (PATIENT â†” PRATICIEN/SECRÃ‰TARIAT) =====================
+-- ===================== MESSAGES (PATIENT <-> PRATICIEN/SECRÉTARIAT) =====================
 
 create table if not exists app.messages (
   id uuid primary key default gen_random_uuid(),
@@ -991,3 +1075,4 @@ for select using (app.has_role('secretaire'));
 drop policy if exists messages_insert_secretaire on app.messages;
 create policy messages_insert_secretaire on app.messages
 for insert with check (app.has_role('secretaire') and sender = 'secretaire');
+

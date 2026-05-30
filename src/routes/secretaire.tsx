@@ -106,7 +106,8 @@ function SecretaireHome() {
         const { data, error } = await qb.order("scheduled_at", { ascending: true });
         if (error) throw error;
         // load practitioners for assignment
-        const profs = await supabase
+        const profs = await sb
+          .schema("app")
           .from("profiles")
           .select("user_id, full_name, role")
           .eq("role", "medecin");
@@ -256,6 +257,11 @@ function SecretaireHome() {
             </div>
           </div>
           <div className="mt-5 space-y-2">
+            {!loading && queue.length === 0 ? (
+              <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">
+                Aucun patient en file d'attente pour aujourd'hui.
+              </div>
+            ) : null}
             {(loading ? [] : queue).map((q, i) => (
               <motion.div
                 key={q.id}
@@ -281,6 +287,11 @@ function SecretaireHome() {
                     className="text-xs rounded-xl border px-2 py-1"
                   >
                     <option value="">— Médecin —</option>
+                    {practitioners.length === 0 ? (
+                      <option value="" disabled>
+                        Aucun médecin trouvé
+                      </option>
+                    ) : null}
                     {practitioners.map((p) => (
                       <option key={p.user_id} value={p.user_id}>
                         {p.full_name}
@@ -308,6 +319,11 @@ function SecretaireHome() {
         >
           <h3 className="text-lg font-bold text-[color:var(--navy)]">Prochains rendez-vous</h3>
           <div className="mt-5 space-y-2">
+            {!loading && upcoming.length === 0 ? (
+              <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">
+                Aucun rendez-vous à venir.
+              </div>
+            ) : null}
             {(loading ? [] : upcoming).map((u, i) => (
               <motion.div
                 key={u.id}

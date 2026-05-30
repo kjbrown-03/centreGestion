@@ -3,6 +3,7 @@ declare const Deno: any;
 type Body = {
   prompt?: string;
   model?: string;
+  maxOutputTokens?: number;
 };
 
 const cors = {
@@ -34,6 +35,10 @@ Deno.serve(async (req: Request) => {
     const body = (await req.json()) as Body;
     const prompt = (body.prompt ?? "").trim();
     const model = (body.model ?? "gemini-2.5-flash").trim();
+    const maxOutputTokens =
+      typeof body.maxOutputTokens === "number" && body.maxOutputTokens > 0
+        ? Math.min(Math.round(body.maxOutputTokens), 1200)
+        : 420;
     if (!prompt) return json(400, { error: "Prompt manquant" });
 
     const res = await fetch(
@@ -46,7 +51,7 @@ Deno.serve(async (req: Request) => {
         },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.35, maxOutputTokens: 420 },
+          generationConfig: { temperature: 0.35, maxOutputTokens },
         }),
       },
     );

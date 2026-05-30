@@ -36,37 +36,46 @@ function hasAny(text: string, words: string[]) {
   return words.some((word) => text.includes(word));
 }
 
-export async function medicalChatbot(params: ChatbotParams): Promise<string> {
-  if (params.role === "patient") {
-    try {
-      const prompt = [
-        "Tu es le chatbot médical du Centre de Santé 2KC au Cameroun.",
-        "Réponds en français simple, avec prudence, sans poser de diagnostic définitif.",
-        "Si les symptômes semblent graves, conseille de contacter le centre sur WhatsApp au 693904197 ou d'aller aux urgences.",
-        params.context?.length ? `Contexte recent: ${params.context.slice(0, 3).join(" | ")}` : "",
-        `Patient: ${params.userName ?? "Patient"}`,
-        `Question: ${params.message}`,
-      ]
-        .filter(Boolean)
-        .join("\n");
-      const supabase = await getSupabaseAsync();
-      const { data, error } = await supabase.functions.invoke("ai-assistant", {
-        body: { prompt, model: "gemini-2.5-flash" },
-      });
-      if (error) throw error;
-      const text = String((data as any)?.text ?? "").trim();
-      if (text) return text;
-    } catch {
-      // Fallback local si l'Edge Function n'est pas encore deployee.
-    }
+async function askGemini(prompt: string, maxOutputTokens = 520): Promise<string | null> {
+  try {
+    const supabase = await getSupabaseAsync();
+    const { data, error } = await supabase.functions.invoke("ai-assistant", {
+      body: { prompt, model: "gemini-2.5-flash", maxOutputTokens },
+    });
+    if (error) throw error;
+    const text = String((data as any)?.text ?? "").trim();
+    return text || null;
+  } catch {
+    return null;
   }
+}
 
+function buildMedicalPrompt(params: ChatbotParams) {
+  const roleLabel = params.role === "patient" ? "patient" : `utilisateur ${params.role}`;
+  return [
+    "Tu es l'assistant IA du Centre de Santé 2KC au Cameroun.",
+    "Réponds en français clair, court et utile.",
+    "Ne pose jamais de diagnostic définitif et ne remplace pas une consultation médicale.",
+    "Si les symptômes semblent graves, conseille de contacter le centre sur WhatsApp au 693904197 ou d'aller aux urgences.",
+    "Pour les professionnels du centre, donne une aide opérationnelle liée au flux de soins, sans inventer de données absentes.",
+    params.context?.length ? `Contexte du dossier: ${params.context.slice(0, 6).join(" | ")}` : "",
+    `Rôle: ${roleLabel}`,
+    `Nom: ${params.userName ?? "Utilisateur"}`,
+    `Question: ${params.message}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function medicalChatbot(params: ChatbotParams): Promise<string> {
+  const aiText = await askGemini(buildMedicalPrompt(params));
+  if (aiText) return aiText;
   return medicalChatbotAnswer(params.message, params.role, params.context);
 }
 
 export function medicalChatbotAnswer(message: string, role = "patient", context: string[] = []) {
   const text = normalize(message);
-  const contextLine = context.length ? "\n\nContexte recent: " + context.slice(0, 2).join(" | ") : "";
+  const contextLine = context.length ? "\n\nContexte récent: " + context.slice(0, 2).join(" | ") : "";
 
   if (!text) {
     return "Posez votre question de santé. Je peux vous orienter, mais je ne remplace pas une consultation médicale.";
@@ -74,68 +83,68 @@ export function medicalChatbotAnswer(message: string, role = "patient", context:
 
   if (hasAny(text, emergencyWords)) {
     return [
-      "Cela peut etre une urgence.",
-      "Appelez immediatement le centre au 693904197 sur WhatsApp ou rendez-vous aux urgences.",
+      "Cela peut être une urgence.",
+      "Appelez immédiatement le centre au 693904197 sur WhatsApp ou rendez-vous aux urgences.",
       "Si la personne respire mal, perd connaissance, convulse ou saigne beaucoup, ne restez pas seul avec elle.",
     ].join("\n");
   }
 
   if (hasAny(text, feverWords)) {
     return [
-      "Pour une fievre: hydratez-vous, reposez-vous et surveillez la temperature.",
-      "Consultez rapidement si la fievre depasse 39°C, dure plus de 48h, s'accompagne de vomissements, raideur de nuque, grande fatigue, grossesse ou enfant en bas age.",
-      "Au Cameroun, pensez au paludisme si fievre avec frissons: un test est recommande avant traitement.",
+      "Pour une fièvre: hydratez-vous, reposez-vous et surveillez la température.",
+      "Consultez rapidement si la fièvre dépasse 39 °C, dure plus de 48 h, ou s'accompagne de vomissements, raideur de nuque, grande fatigue, grossesse ou enfant en bas âge.",
+      "Au Cameroun, pensez au paludisme si la fièvre vient avec des frissons: un test est recommandé avant traitement.",
     ].join("\n");
   }
 
   if (hasAny(text, coughWords)) {
     return [
-      "Pour toux/rhume: buvez regulierement, evitez la fumee et reposez-vous.",
-      "Consultez si la toux dure plus de 7 jours, s'il y a douleur thoracique, difficulte a respirer, fievre persistante ou crachats avec sang.",
-      "Ne prenez pas d'antibiotique sans avis medical.",
+      "Pour toux/rhume: buvez régulièrement, évitez la fumée et reposez-vous.",
+      "Consultez si la toux dure plus de 7 jours, s'il y a douleur thoracique, difficulté à respirer, fièvre persistante ou crachats avec sang.",
+      "Ne prenez pas d'antibiotique sans avis médical.",
     ].join("\n");
   }
 
   if (hasAny(text, painWords)) {
     return [
-      "Pour une douleur: notez l'endroit, l'intensite, le debut et ce qui l'aggrave.",
+      "Pour une douleur: notez l'endroit, l'intensité, le début et ce qui l'aggrave.",
       "Consultez vite si la douleur est forte, brutale, au niveau de la poitrine, avec essoufflement, malaise, vomissements persistants ou grossesse.",
-      "Evitez l'automedication si vous avez ulcere, maladie renale, grossesse ou traitement anticoagulant.",
+      "Évitez l'automédication si vous avez ulcère, maladie rénale, grossesse ou traitement anticoagulant.",
     ].join("\n");
   }
 
   if (hasAny(text, pregnancyWords)) {
     return [
-      "En cas de grossesse ou suspicion, prenez rendez-vous pour une confirmation et un suivi prenatal.",
-      "Consultez en urgence si douleurs fortes, saignements, fievre, vertiges ou diminution des mouvements du bebe.",
+      "En cas de grossesse ou suspicion, prenez rendez-vous pour une confirmation et un suivi prénatal.",
+      "Consultez en urgence si douleurs fortes, saignements, fièvre, vertiges ou diminution des mouvements du bébé.",
       "Ne prenez pas de médicament sans avis d'un professionnel de santé.",
     ].join("\n");
   }
 
   if (hasAny(text, medicineWords)) {
     return [
-      "Respectez l'ordonnance: dose, horaires et duree.",
-      "Si vous avez oublie une prise, ne doublez pas la dose sans avis medical.",
-      "Signalez rapidement allergie, eruption, gonflement, difficulte a respirer ou effet indesirable important.",
+      "Respectez l'ordonnance: dose, horaires et durée.",
+      "Si vous avez oublié une prise, ne doublez pas la dose sans avis médical.",
+      "Signalez rapidement allergie, éruption, gonflement, difficulté à respirer ou effet indésirable important.",
     ].join("\n");
   }
 
   if (hasAny(text, appointmentWords)) {
     return [
       "Vous pouvez demander un rendez-vous depuis l'onglet Rendez-vous de votre espace patient.",
-      "Pour une reponse rapide, contactez le centre sur WhatsApp au 693904197.",
-      "Indiquez votre nom, le motif, la date souhaitee et vos symptomes principaux.",
+      "Pour une réponse rapide, contactez le centre sur WhatsApp au 693904197.",
+      "Indiquez votre nom, le motif, la date souhaitée et vos symptômes principaux.",
     ].join("\n");
   }
 
   if (role === "secretaire") {
-    return "Orientez le patient selon l'urgence: signes graves vers consultation immediate, demandes simples vers rendez-vous, et relance WhatsApp au 693904197 si besoin.";
+    return "Orientez le patient selon l'urgence: signes graves vers consultation immédiate, demandes simples vers rendez-vous, et relance WhatsApp au 693904197 si besoin.";
   }
 
   return [
-    "Je peux donner une orientation generale, mais seul un professionnel peut poser un diagnostic.",
+    "Je peux donner une orientation générale, mais seul un professionnel peut poser un diagnostic.",
     "Décrivez vos symptômes: âge, durée, température, douleur, médicaments pris et antécédents.",
-    "Si les symptomes sont importants ou s'aggravent, contactez le centre sur WhatsApp au 693904197.",
+    "Si les symptômes sont importants ou s'aggravent, contactez le centre sur WhatsApp au 693904197.",
     contextLine,
   ]
     .filter(Boolean)
@@ -147,10 +156,12 @@ export async function suggestTreatment(params: {
   symptoms?: string;
   notes?: string;
 }): Promise<string> {
-  return medicalChatbotAnswer(
-    [params.chiefComplaint, params.symptoms, params.notes].filter(Boolean).join(" "),
-    "medecin",
-  );
+  const message = [params.chiefComplaint, params.symptoms, params.notes].filter(Boolean).join(" ");
+  return medicalChatbot({
+    role: "medecin",
+    message: message || "Aide à la consultation",
+    context: ["Aide clinique prudente", "Proposer examens, surveillance et conduite à tenir sans diagnostic définitif"],
+  });
 }
 
 export async function stockReorderAdvice(
@@ -158,9 +169,15 @@ export async function stockReorderAdvice(
 ): Promise<string> {
   const low = items.filter((i) => i.stock <= i.threshold);
   if (!low.length) return "RAS: aucun article sous le seuil.";
-  return low
-    .map((i) => `${i.name}: stock ${i.stock}, seuil ${i.threshold}. Commander en priorite.`)
-    .join("\n");
+  const prompt = [
+    "Tu aides le pharmacien du Centre de Santé 2KC.",
+    "À partir des articles sous le seuil, propose une priorité de réapprovisionnement courte.",
+    low.map((i) => `${i.name}: stock ${i.stock}, seuil ${i.threshold}`).join("\n"),
+  ].join("\n");
+  return (
+    (await askGemini(prompt, 360)) ??
+    low.map((i) => `${i.name}: stock ${i.stock}, seuil ${i.threshold}. Commander en priorité.`).join("\n")
+  );
 }
 
 export async function financeDailySummary(params: {
@@ -169,30 +186,44 @@ export async function financeDailySummary(params: {
   outstanding: number;
   mobileMoneySum?: number;
 }): Promise<string> {
-  return [
+  const fallback = [
     `Factures: ${params.invoicesCount}.`,
     `Encaissements: ${Math.round(params.paymentsSum).toLocaleString("fr-FR")} FCFA.`,
-    `Reste a payer: ${Math.round(params.outstanding).toLocaleString("fr-FR")} FCFA.`,
+    `Reste à payer: ${Math.round(params.outstanding).toLocaleString("fr-FR")} FCFA.`,
     params.mobileMoneySum != null
       ? `Mobile Money: ${Math.round(params.mobileMoneySum).toLocaleString("fr-FR")} FCFA.`
       : null,
   ]
     .filter(Boolean)
     .join("\n");
+
+  return (
+    (await askGemini(
+      `Résume la journée comptable du Centre de Santé 2KC en 3 lignes et signale le point à suivre.\n${fallback}`,
+      260,
+    )) ?? fallback
+  );
 }
 
 export async function nurseCareAdvisor(
   tasks: Array<{ time?: string; act?: string; urgent?: boolean }>,
 ): Promise<string> {
   const urgent = tasks.filter((t) => t.urgent);
-  if (!tasks.length) return "RAS: aucune tache de soin fournie.";
-  return [
-    urgent.length ? `Priorite: ${urgent.map((t) => t.act ?? "soin urgent").join(", ")}.` : null,
-    "Verifier les constantes, les horaires de prise et signaler toute aggravation au medecin.",
-    "Documenter chaque soin realise dans le dossier patient.",
+  const fallback = [
+    urgent.length ? `Priorité: ${urgent.map((t) => t.act ?? "soin urgent").join(", ")}.` : null,
+    "Vérifier les constantes, les horaires de prise et signaler toute aggravation au médecin.",
+    "Documenter chaque soin réalisé dans le dossier patient.",
   ]
     .filter(Boolean)
     .join("\n");
+
+  if (!tasks.length) return "RAS: aucune tâche de soin fournie.";
+  return (
+    (await askGemini(
+      `Tu aides l'infirmier du Centre de Santé 2KC. Priorise ces soins en français court:\n${JSON.stringify(tasks)}`,
+      300,
+    )) ?? fallback
+  );
 }
 
 export async function patientReminders(params: {
@@ -200,13 +231,11 @@ export async function patientReminders(params: {
   meds?: Array<{ name: string; dosage?: string; frequency?: string }>;
 }): Promise<string> {
   const ap = params.nextAppointmentIso ? new Date(params.nextAppointmentIso).toLocaleString() : null;
-  const meds = (params.meds ?? []).map((m) =>
-    [m.name, m.dosage, m.frequency].filter(Boolean).join(" - "),
-  );
+  const meds = (params.meds ?? []).map((m) => [m.name, m.dosage, m.frequency].filter(Boolean).join(" - "));
   return [
-    ap ? `Prochain rendez-vous: ${ap}.` : "Aucun rendez-vous a venir dans le dossier.",
+    ap ? `Prochain rendez-vous: ${ap}.` : "Aucun rendez-vous à venir dans le dossier.",
     meds.length ? `Médicaments à respecter: ${meds.join("; ")}.` : "Aucun médicament actif trouvé.",
-    "Conseil: hydratez-vous, reposez-vous et contactez le centre si les symptomes s'aggravent.",
+    "Conseil: hydratez-vous, reposez-vous et contactez le centre si les symptômes s'aggravent.",
   ].join("\n");
 }
 
@@ -219,12 +248,19 @@ export async function secretaryQueueAdvisor(
   }>,
 ): Promise<string> {
   const waiting = appts.filter((a) => a.status === "en_attente");
-  if (!appts.length) return "Aucun rendez-vous a traiter.";
-  return [
-    `${waiting.length} rendez-vous en attente a confirmer.`,
-    "Prioriser les motifs avec douleur, fievre, grossesse, enfant ou symptomes respiratoires.",
-    "Relancer les patients par WhatsApp au 693904197 avec l'heure confirmee.",
+  if (!appts.length) return "Aucun rendez-vous à traiter.";
+  const fallback = [
+    `${waiting.length} rendez-vous en attente à confirmer.`,
+    "Prioriser les motifs avec douleur, fièvre, grossesse, enfant ou symptômes respiratoires.",
+    "Relancer les patients par WhatsApp au 693904197 avec l'heure confirmée.",
   ].join("\n");
+
+  return (
+    (await askGemini(
+      `Tu aides le secrétariat du Centre de Santé 2KC. Organise cette file de rendez-vous en 3 lignes:\n${JSON.stringify(appts.slice(0, 8))}`,
+      320,
+    )) ?? fallback
+  );
 }
 
 export async function directorKpiInsights(params: {
@@ -233,10 +269,17 @@ export async function directorKpiInsights(params: {
   stockValue: number;
   monthRevenue: number;
 }): Promise<string> {
-  return [
+  const fallback = [
     `Patients du jour: ${params.uniquePatients}.`,
     `Rendez-vous: ${params.apptCount}.`,
     `Valeur stock: ${Math.round(params.stockValue).toLocaleString("fr-FR")} FCFA.`,
     `Encaissements du mois: ${Math.round(params.monthRevenue).toLocaleString("fr-FR")} FCFA.`,
   ].join("\n");
+
+  return (
+    (await askGemini(
+      `Analyse ces KPI du Centre de Santé 2KC en français court, avec une action prioritaire:\n${fallback}`,
+      280,
+    )) ?? fallback
+  );
 }

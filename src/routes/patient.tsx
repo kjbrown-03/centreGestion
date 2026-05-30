@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getSupabaseAsync } from "@/lib/supabase";
-import { patientReminders } from "@/lib/ai";
 import { whatsappUrlFor } from "@/lib/contact";
 import { useAuth } from "@/lib/store";
 import {
@@ -43,6 +42,17 @@ const DEMO_PASSWORDS: Record<string, string> = {
   "patient@2kc.fr": "patient123",
 };
 
+async function loadPatientLink(sb: any, userId: string) {
+  return sb
+    .schema("app")
+    .from("patient_accounts")
+    .select(
+      "patient_id, patient:patient_id (id, first_name, last_name, birth_date, blood_type, phone, allergies, chronic_conditions)",
+    )
+    .eq("user_id", userId)
+    .maybeSingle();
+}
+
 function PatientDashboard() {
   const appUser = useAuth((s: { user: any }) => s.user);
   const [patient, setPatient] = useState<any | null>(null);
@@ -59,9 +69,8 @@ function PatientDashboard() {
   const [activePresc, setActivePresc] = useState<any | null>(null);
   const [activeInvoice, setActiveInvoice] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [reminderLoading, setReminderLoading] = useState<boolean>(false);
-  const [reminderText, setReminderText] = useState<string>("");
   const [authEmail, setAuthEmail] = useState<string | null>(null);
+  const [profileForm, setProfileForm] = useState({ phone: "", blood_type: "", allergies: "", chronic_conditions: "" });
 
   useEffect(() => {
     let alive = true;
@@ -86,31 +95,25 @@ function PatientDashboard() {
         if (!user?.id) throw new Error("Session Supabase introuvable. Veuillez vous reconnecter.");
         setAuthEmail(user.email ?? null);
         const sb: any = supabase;
-        let { data: link, error: linkErr } = await sb
-          .schema("app")
-          .from("patient_accounts")
-          .select(
-            "patient_id, patient:patient_id (id, first_name, last_name, birth_date, blood_type, phone, allergies, chronic_conditions)",
-          )
-          .eq("user_id", user.id)
-          .maybeSingle();
+        let { data: link, error: linkErr } = await loadPatientLink(sb, user.id);
         if (!link?.patient_id && user.email && DEMO_PASSWORDS[user.email.toLowerCase()]) {
           await supabase.functions.invoke("ensure-demo-account", {
             body: { email: user.email.toLowerCase(), password: DEMO_PASSWORDS[user.email.toLowerCase()] },
           });
-          const retry = await sb
-            .schema("app")
-            .from("patient_accounts")
-            .select(
-              "patient_id, patient:patient_id (id, first_name, last_name, birth_date, blood_type, phone, allergies, chronic_conditions)",
-            )
-            .eq("user_id", user.id)
-            .maybeSingle();
+          const retry = await loadPatientLink(sb, user.id);
           link = retry.data;
           linkErr = retry.error;
         }
+        if (!link?.patient_id && !linkErr) {
+          const ensured = await sb.schema("app").rpc("ensure_patient_account_self");
+          if (!ensured.error) {
+            const retry = await loadPatientLink(sb, user.id);
+            link = retry.data;
+            linkErr = retry.error;
+          }
+        }
         if (linkErr) throw linkErr;
-        if (!link?.patient_id) throw new Error("Votre espace patient est en cours de création. Reconnectez-vous dans quelques secondes.");
+        if (!link?.patient_id) throw new Error("Dossier patient indisponible. Contactez l'accueil pour activer votre espace.");
         const pid = link.patient_id;
         if (alive) setPatient(link.patient);
         const [ap, pr, inv] = await Promise.all([
@@ -144,6 +147,12 @@ function PatientDashboard() {
           setAppointments(ap.data ?? []);
           setPrescriptions(pr.data ?? []);
           setInvoices(inv.data ?? []);
+          setProfileForm({
+            phone: link.patient?.phone ?? "",
+            blood_type: link.patient?.blood_type ?? "",
+            allergies: (link.patient?.allergies ?? []).join(", "),
+            chronic_conditions: (link.patient?.chronic_conditions ?? []).join(", "),
+          });
         }
       } catch (err: any) {
         toast.error(err?.message ?? "Impossible de charger vos données.");
@@ -172,7 +181,7 @@ function PatientDashboard() {
     (apt) => new Date(apt.scheduled_at).getTime() < Date.now(),
   );
 
-  const patientPrescriptions = prescriptions;
+  const patientPrescriptions = prescriptions.filter((p) => (p.status ?? "active") === "active");
 
   const handleBookAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,7 +190,7 @@ function PatientDashboard() {
       return;
     }
     if (!patient?.id) {
-      toast.error("Votre espace patient est en cours de création. Reconnectez-vous dans quelques secondes.");
+      toast.error("Dossier patient indisponible. Contactez l'accueil pour activer votre espace.");
       return;
     }
     try {
@@ -229,21 +238,22 @@ function PatientDashboard() {
     toast.success("Impression de la facture lancée.");
   };
 
-  async function runAiReminders() {
+  async function saveMedicalProfile() {
     try {
-      setReminderLoading(true);
-      const nextAptIso = upcomingAppointments[0]?.scheduled_at as string | undefined;
-      const latestItems = ((patientPrescriptions?.[0]?.items ?? []) as any[]).map((i: any) => ({
-        name: i.medicine_name,
-        dosage: i.dosage ?? undefined,
-        frequency: i.frequency ?? undefined,
-      }));
-      const text = await patientReminders({ nextAppointmentIso: nextAptIso, meds: latestItems });
-      setReminderText(text);
+      if (!patient?.id) return;
+      const supabase = await getSupabaseAsync();
+      const patch = {
+        phone: profileForm.phone.trim() || null,
+        blood_type: profileForm.blood_type || null,
+        allergies: profileForm.allergies.split(",").map((x) => x.trim()).filter(Boolean),
+        chronic_conditions: profileForm.chronic_conditions.split(",").map((x) => x.trim()).filter(Boolean),
+      };
+      const { error } = await (supabase as any).schema("app").from("patients").update(patch).eq("id", patient.id);
+      if (error) throw error;
+      setPatient((p: any) => ({ ...p, ...patch }));
+      toast.success("Dossier médical mis à jour.");
     } catch (err: any) {
-      toast.error(err?.message ?? "Rappels indisponibles.");
-    } finally {
-      setReminderLoading(false);
+      toast.error(err?.message ?? "Mise à jour impossible.");
     }
   }
 
@@ -400,24 +410,6 @@ function PatientDashboard() {
           hint="Dossier médical unifié"
           icon={AlertCircle}
         />
-      </div>
-
-      {/* Rappels santé */}
-      <div className="mt-4 space-y-3">
-        <Button
-          onClick={() => void runAiReminders()}
-          disabled={reminderLoading}
-          className="rounded-2xl gradient-mint text-[color:var(--navy)] font-semibold px-5 py-3 border-none shadow-mint disabled:opacity-60"
-        >
-          Rappels & conseils santé
-        </Button>
-        {reminderText ? (
-          <Card className="rounded-2xl border bg-muted/40">
-            <CardContent className="pt-4">
-              <pre className="whitespace-pre-wrap text-sm text-[color:var(--navy)]">{reminderText}</pre>
-            </CardContent>
-          </Card>
-        ) : null}
       </div>
 
       <Tabs defaultValue="appointments" className="mt-8 space-y-6">
@@ -732,12 +724,15 @@ function PatientDashboard() {
                     <h3 className="font-bold text-[color:var(--navy)]">Allergies connues</h3>
                   </div>
                   <div className="space-y-2">
+                    {(patient?.allergies ?? []).length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Aucune allergie renseignée.</p>
+                    ) : null}
                     {(patient?.allergies ?? []).map((a: string) => (
                       <div
                         key={a}
                         className="px-3.5 py-2.5 bg-red-500/5 border border-red-500/10 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2"
                       >
-                        ⚠ {a}
+                        {a}
                       </div>
                     ))}
                   </div>
@@ -757,6 +752,9 @@ function PatientDashboard() {
                     <h3 className="font-bold text-[color:var(--navy)]">Antécédents médicaux</h3>
                   </div>
                   <ul className="space-y-2">
+                    {(patient?.chronic_conditions ?? []).length === 0 ? (
+                      <li className="text-sm text-muted-foreground">Aucun antécédent renseigné.</li>
+                    ) : null}
                     {(patient?.chronic_conditions ?? []).map((h: string, i: number) => (
                       <li
                         key={i}
@@ -772,6 +770,29 @@ function PatientDashboard() {
               </Card>
             </div>
           </div>
+
+          <Card className="rounded-3xl border bg-card p-6 shadow-sm">
+            <CardHeader className="p-0 mb-5">
+              <CardTitle className="text-lg font-bold text-[color:var(--navy)]">
+                Compléter mon dossier médical
+              </CardTitle>
+              <CardDescription>
+                Ces informations alimentent les cartes de votre espace patient.
+              </CardDescription>
+            </CardHeader>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <input value={profileForm.phone} onChange={(e) => setProfileForm((f) => ({ ...f, phone: e.target.value }))} placeholder="Téléphone" className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none" />
+              <select value={profileForm.blood_type} onChange={(e) => setProfileForm((f) => ({ ...f, blood_type: e.target.value }))} className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none">
+                <option value="">Groupe sanguin</option>
+                {["A+","A-","B+","B-","AB+","AB-","O+","O-"].map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+              <input value={profileForm.allergies} onChange={(e) => setProfileForm((f) => ({ ...f, allergies: e.target.value }))} placeholder="Allergies, séparées par virgule" className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none sm:col-span-2" />
+              <input value={profileForm.chronic_conditions} onChange={(e) => setProfileForm((f) => ({ ...f, chronic_conditions: e.target.value }))} placeholder="Antécédents médicaux, séparés par virgule" className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none sm:col-span-2" />
+              <Button onClick={() => void saveMedicalProfile()} className="rounded-2xl sm:col-span-2">
+                Enregistrer mon dossier
+              </Button>
+            </div>
+          </Card>
 
           {/* Current treatments */}
           <Card className="rounded-3xl border bg-card p-6 shadow-sm mt-6">
