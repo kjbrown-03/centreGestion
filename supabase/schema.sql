@@ -1,4 +1,4 @@
--- 2KC Centre de Santé — Supabase/PostgreSQL schema
+﻿-- 2KC Centre de SantÃ© â€” Supabase/PostgreSQL schema
 -- Copy/paste into Supabase SQL editor.
 
 -- Extensions
@@ -386,6 +386,13 @@ drop policy if exists "profiles_read_self" on app.profiles;
 create policy "profiles_read_self" on app.profiles
 for select using (user_id = auth.uid() or app.is_admin());
 
+drop policy if exists "profiles_read_practitioners_for_staff" on app.profiles;
+create policy "profiles_read_practitioners_for_staff" on app.profiles
+for select using (
+  app.has_any_role(array['admin','secretaire','directeur']::app.user_role[])
+  and role in ('medecin'::app.user_role, 'infirmier'::app.user_role)
+);
+
 drop policy if exists "profiles_admin_write" on app.profiles;
 create policy "profiles_admin_write" on app.profiles
 for all using (app.is_admin()) with check (app.is_admin());
@@ -542,7 +549,7 @@ for insert with check (auth.uid() is not null);
 -- Insert sample patients
 insert into app.patients (patient_code, first_name, last_name, sex, birth_date, phone, address)
 values
-  ('2KC00000000', 'Chantal', 'Ndzi', 'F', '1994-06-12', '+237690000001', 'Douala'),
-  ('2KC00000001', 'Junior', 'Kemajou', 'M', '1988-10-02', '+237690000002', 'Yaoundé'),
-  ('2KC00000002', 'Estelle', 'Nkom', 'F', '2001-01-19', '+237690000003', 'Bafoussam')
+  ('2KC00000000', 'Chantal', 'Ndzi', 'F', '1994-06-12', '693904197', 'Douala'),
+  ('2KC00000001', 'Junior', 'Kemajou', 'M', '1988-10-02', '693904197', 'YaoundÃ©'),
+  ('2KC00000002', 'Estelle', 'Nkom', 'F', '2001-01-19', '693904197', 'Bafoussam')
 on conflict do nothing;

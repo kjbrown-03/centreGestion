@@ -3,9 +3,7 @@ import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayou
 import { Calendar, Users, Phone, MessageSquare } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { hasGemini, secretaryQueueAdvisor } from "@/lib/ai";
 import { getSupabaseAsync } from "@/lib/supabase";
 
 export const Route = createFileRoute("/secretaire")({ component: SecretaireHome });
@@ -43,8 +41,6 @@ type Appt = {
 function SecretaireHome() {
   const [loading, setLoading] = useState(true);
   const [appts, setAppts] = useState<Appt[]>([]);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiText, setAiText] = useState("");
   const [practitioners, setPractitioners] = useState<Array<{ user_id: string; full_name: string }>>(
     [],
   );
@@ -110,16 +106,14 @@ function SecretaireHome() {
         const { data, error } = await qb.order("scheduled_at", { ascending: true });
         if (error) throw error;
         // load practitioners for assignment
-        const profs = await sb
-          .schema("app")
+        const profs = await supabase
           .from("profiles")
           .select("user_id, full_name, role")
           .eq("role", "medecin");
-        if (profs.error) throw profs.error;
         if (alive) {
           setAppts((data ?? []) as any);
           setPractitioners(
-            ((profs.data ?? []) as any).map((p: any) => ({
+            ((profs.error ? [] : profs.data ?? []) as any).map((p: any) => ({
               user_id: p.user_id,
               full_name: p.full_name,
             })),
@@ -223,24 +217,6 @@ function SecretaireHome() {
     }
   }
 
-  async function runAiAdvisor() {
-    try {
-      if (!hasGemini()) {
-        toast.error(
-          "Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env pour activer l'assistant.",
-        );
-        return;
-      }
-      setAiLoading(true);
-      const text = await secretaryQueueAdvisor(appts as any);
-      setAiText(text);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Assistant IA indisponible.");
-    } finally {
-      setAiLoading(false);
-    }
-  }
-
   return (
     <DashboardLayout allow="secretaire" title="Accueil & rendez-vous">
       <div className="grid sm:grid-cols-4 gap-5">
@@ -257,24 +233,6 @@ function SecretaireHome() {
         />
         <StatCard label="Appels traités" value="0" icon={Phone} />
         <StatCard label="Messages" value="0" icon={MessageSquare} />
-      </div>
-
-      <div className="mt-4 space-y-3">
-        <button
-          type="button"
-          onClick={() => void runAiAdvisor()}
-          disabled={aiLoading}
-          className="rounded-2xl gradient-mint text-[color:var(--navy)] font-semibold px-5 py-3 border-none shadow-mint disabled:opacity-60"
-        >
-          IA: Conseils de tri & relances
-        </button>
-        {aiText ? (
-          <Card className="rounded-2xl border bg-muted/40">
-            <CardContent className="pt-4">
-              <pre className="whitespace-pre-wrap text-sm text-[color:var(--navy)]">{aiText}</pre>
-            </CardContent>
-          </Card>
-        ) : null}
       </div>
 
       <div className="mt-8 grid lg:grid-cols-2 gap-6">
@@ -380,3 +338,4 @@ function SecretaireHome() {
     </DashboardLayout>
   );
 }
+

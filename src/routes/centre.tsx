@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, ArrowLeft, CheckCircle2, MapPin, Phone } from "lucide-react";
 import { Navbar } from "@/components/site/Navbar";
 import { Footer } from "@/components/site/Footer";
+import { CENTRE_PHONE_DISPLAY, GOOGLE_MAPS_EMBED_URL, WHATSAPP_URL } from "@/lib/contact";
 
 export const Route = createFileRoute("/centre")({
   component: CentrePage,
@@ -74,8 +75,24 @@ function CentrePage() {
             <Phone className="size-5 text-[color:var(--mint)] shrink-0" />
             <div>
               <p className="font-semibold text-[color:var(--navy)]">Contact</p>
-              <p className="text-sm text-muted-foreground">+237 690 000 000</p>
+              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="text-sm text-muted-foreground hover:text-[color:var(--navy)]">
+                WhatsApp {CENTRE_PHONE_DISPLAY}
+              </a>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="pb-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="overflow-hidden rounded-3xl border bg-card h-[420px]">
+            <iframe
+              title="Carte Google Maps du Centre de Sante 2KC"
+              src={GOOGLE_MAPS_EMBED_URL}
+              className="size-full border-0"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
           </div>
         </div>
       </section>

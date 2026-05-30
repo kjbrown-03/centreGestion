@@ -1,11 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+﻿import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { type Medicine } from "@/lib/store";
 import { Pill, AlertTriangle, Sparkles, CheckCircle2, FileText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { hasGemini, stockReorderAdvice } from "@/lib/ai";
+import { stockReorderAdvice } from "@/lib/ai";
 
 export const Route = createFileRoute("/pharmacien")({ component: PharmacienHome });
 
@@ -31,6 +31,7 @@ function PharmacienHome() {
   const [error, setError] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [advice, setAdvice] = useState<string>("");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -91,6 +92,11 @@ function PharmacienHome() {
   }, []);
 
   const lowStock = useMemo(() => meds.filter((m: Medicine) => m.stock <= m.threshold), [meds]);
+  const filteredMeds = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return meds;
+    return meds.filter((m) => `${m.name} ${m.category}`.toLowerCase().includes(needle));
+  }, [meds, query]);
 
   async function dispensePrescription(presc: Prescription) {
     try {
@@ -145,17 +151,13 @@ function PharmacienHome() {
 
   async function runAdvice() {
     try {
-      if (!hasGemini()) {
-        toast.error("Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env et relancez.");
-        return;
-      }
       setAiLoading(true);
       const txt = await stockReorderAdvice(
         lowStock.map((m) => ({ name: m.name, stock: m.stock, threshold: m.threshold })),
       );
       setAdvice(txt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Assistant IA indisponible.");
+      toast.error(err?.message ?? "Service indisponible.");
     } finally {
       setAiLoading(false);
     }
@@ -239,7 +241,7 @@ function PharmacienHome() {
                 <Pill className="size-5 text-[color:var(--mint)]" /> Stock pharmacie
               </h3>
               <p className="text-sm text-muted-foreground">
-                Consultation du stock (édition réservée à l'admin)
+                Consultation du stock, édition réservée à l'admin.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -254,7 +256,7 @@ function PharmacienHome() {
                 disabled={aiLoading}
                 className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border hover:bg-muted disabled:opacity-60"
               >
-                <Sparkles className="size-4 text-[color:var(--mint)]" /> IA: Recommander
+                <Sparkles className="size-4 text-[color:var(--mint)]" /> Recommander
               </button>
             </div>
           </div>
@@ -269,13 +271,20 @@ function PharmacienHome() {
 
           {advice ? (
             <div className="mt-6 rounded-2xl border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
-              <p className="font-semibold text-[color:var(--navy)] mb-2">Recommandations IA</p>
+              <p className="font-semibold text-[color:var(--navy)] mb-2">Recommandations</p>
               {advice}
             </div>
           ) : null}
 
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filtrer les médicaments..."
+            className="mt-6 w-full rounded-xl border bg-background px-3.5 py-2.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+          />
+
           <div className="mt-6 grid sm:grid-cols-2 xl:grid-cols-1 gap-4">
-            {meds.slice(0, 9).map((m) => (
+            {filteredMeds.slice(0, 12).map((m) => (
               <div key={m.id} className="rounded-2xl border p-4 bg-muted/10">
                 <p className="font-semibold text-[color:var(--navy)] truncate">{m.name}</p>
                 <p className="text-xs text-muted-foreground mt-1">{m.category}</p>
@@ -291,7 +300,7 @@ function PharmacienHome() {
                     </p>
                   </div>
                   <p className="text-sm font-semibold text-[color:var(--navy)]">
-                    {m.price.toFixed(2)} €
+                    {m.price.toLocaleString("fr-FR")} FCFA
                   </p>
                 </div>
               </div>
@@ -302,3 +311,5 @@ function PharmacienHome() {
     </DashboardLayout>
   );
 }
+
+

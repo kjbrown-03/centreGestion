@@ -1,6 +1,5 @@
 import { motion } from "framer-motion";
 import { Link } from "@tanstack/react-router";
-import { useEffect } from "react";
 import { ArrowRight, Play, ShieldCheck } from "lucide-react";
 import { homeText, useI18n } from "@/lib/i18n";
 
@@ -11,25 +10,6 @@ export function Hero() {
   const lang = useI18n((s) => s.lang);
   const t = homeText[lang];
   const headline = [t.h1a, t.h1b, t.h1c];
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    const alreadySpoken = window.sessionStorage.getItem(`2kc-welcome-${lang}`);
-    if (alreadySpoken) return;
-    const id = window.setTimeout(() => {
-      try {
-        const utterance = new SpeechSynthesisUtterance(t.welcome);
-        utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
-        utterance.rate = 0.95;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
-        window.sessionStorage.setItem(`2kc-welcome-${lang}`, "1");
-      } catch {
-        // Speech is progressive enhancement only.
-      }
-    }, 700);
-    return () => window.clearTimeout(id);
-  }, [lang, t.welcome]);
 
   return (
     <section className="relative min-h-screen overflow-hidden text-white">

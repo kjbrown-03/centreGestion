@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+﻿import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { HeartPulse, Activity, Syringe, Thermometer, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
@@ -25,7 +25,7 @@ function InfirmierHome() {
       setAiLoading(true);
       setTips(await nurseCareAdvisor(tasks));
     } catch (err: any) {
-      toast.error(err?.message ?? "Assistant IA indisponible.");
+      toast.error(err?.message ?? "Service indisponible.");
     } finally {
       setAiLoading(false);
     }
@@ -54,7 +54,7 @@ function InfirmierHome() {
               disabled={aiLoading}
               className="rounded-2xl border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
             >
-              IA: Prioriser les soins
+              Prioriser les soins
             </button>
           </div>
           <div className="mt-5 space-y-2">
@@ -118,3 +118,4 @@ function InfirmierHome() {
     </DashboardLayout>
   );
 }
+

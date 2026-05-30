@@ -24,16 +24,17 @@ Deno.serve(async (req: Request) => {
 
   try {
     const apiKey =
+      Deno.env.get("api_google") ??
       Deno.env.get("VITE_GEMINI_API_KEY") ??
       Deno.env.get("GEMINI_API_KEY") ??
       Deno.env.get("GOOGLE_GEMINI_API_KEY") ??
       "";
-    if (!apiKey) return json(500, { error: "Missing VITE_GEMINI_API_KEY secret" });
+    if (!apiKey) return json(500, { error: "Secret Gemini manquant: api_google" });
 
     const body = (await req.json()) as Body;
     const prompt = (body.prompt ?? "").trim();
     const model = (body.model ?? "gemini-2.5-flash").trim();
-    if (!prompt) return json(400, { error: "Missing prompt" });
+    if (!prompt) return json(400, { error: "Prompt manquant" });
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
@@ -45,6 +46,7 @@ Deno.serve(async (req: Request) => {
         },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.35, maxOutputTokens: 420 },
         }),
       },
     );
@@ -52,7 +54,7 @@ Deno.serve(async (req: Request) => {
     const payload = await res.json();
     if (!res.ok) {
       return json(res.status, {
-        error: payload?.error?.message ?? "Gemini request failed",
+        error: payload?.error?.message ?? "Requete Gemini impossible",
         details: payload?.error ?? payload,
       });
     }
@@ -65,6 +67,6 @@ Deno.serve(async (req: Request) => {
 
     return json(200, { text });
   } catch (e) {
-    return json(500, { error: (e as any)?.message ?? "Unknown error" });
+    return json(500, { error: (e as any)?.message ?? "Erreur inconnue" });
   }
 });

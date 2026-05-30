@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+﻿import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, Pencil, Plus, Search, Trash2, X } from "lucide-react";
@@ -43,6 +43,10 @@ function catalogAsMedicines(): Medicine[] {
     ...m,
     image: DEFAULT_IMAGE,
   }));
+}
+
+function isPersistedId(id?: string) {
+  return !!id && !id.startsWith("catalog-") && !id.startsWith("local-");
 }
 
 function errorMessage(err: unknown, fallback: string) {
@@ -117,6 +121,10 @@ function Pharmacie() {
 
   async function handleRemove(id: string) {
     setError(null);
+    if (!isPersistedId(id)) {
+      setMedicines((s) => s.filter((x) => x.id !== id));
+      return;
+    }
     try {
       const supabase = await getSupabaseAsync();
       const before = medicines.find((x) => x.id === id) ?? null;
@@ -143,6 +151,11 @@ function Pharmacie() {
       if (editing) {
         const before = editing;
         const delta = data.stock - before.stock;
+        if (!isPersistedId(editing.id)) {
+          setMedicines((s) => s.map((x) => (x.id === editing.id ? { ...x, ...data } : x)));
+          setOpen(false);
+          return;
+        }
         const { error: upErr } = await (supabase as any)
           .schema("app")
           .from("stock_items")
@@ -216,7 +229,7 @@ function Pharmacie() {
       );
       setOpen(false);
       setError(
-        `${errorMessage(err, "Enregistrement Supabase impossible.")} Le médicament est affiché localement; reconnectez-vous avec une session admin Supabase pour le persister.`,
+        `${errorMessage(err, "Enregistrement Supabase impossible.")} Le medicament reste affiche localement. Reconnectez-vous avec une session admin Supabase pour le persister.`,
       );
     }
   }

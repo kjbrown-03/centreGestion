@@ -1,11 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+﻿import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { FileText, CreditCard, Wallet, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { toast } from "sonner";
-import { hasGemini, financeDailySummary } from "@/lib/ai";
+import { financeDailySummary } from "@/lib/ai";
 
 export const Route = createFileRoute("/comptable")({ component: ComptableHome });
 
@@ -144,10 +144,6 @@ function ComptableHome() {
 
   async function runReport() {
     try {
-      if (!hasGemini()) {
-        toast.error("Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env et relancez.");
-        return;
-      }
       setAiLoading(true);
       const txt = await financeDailySummary({
         invoicesCount,
@@ -157,7 +153,7 @@ function ComptableHome() {
       });
       setReport(txt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Assistant IA indisponible.");
+      toast.error(err?.message ?? "Service indisponible.");
     } finally {
       setAiLoading(false);
     }
@@ -168,23 +164,23 @@ function ComptableHome() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
           label="Factures du jour"
-          value={loading ? "…" : String(invoicesCount)}
+          value={loading ? "â€¦" : String(invoicesCount)}
           icon={FileText}
           accent
         />
         <StatCard
-          label="Paiements encaissés"
-          value={loading ? "…" : fmt(paymentsSum)}
+          label="Paiements encaissÃ©s"
+          value={loading ? "â€¦" : fmt(paymentsSum)}
           icon={Wallet}
         />
         <StatCard
           label="Mobile Money"
-          value={loading ? "…" : fmt(mobileMoneySum)}
+          value={loading ? "â€¦" : fmt(mobileMoneySum)}
           icon={CreditCard}
         />
         <StatCard
-          label="Reste à payer"
-          value={loading ? "…" : fmt(outstanding)}
+          label="Reste Ã  payer"
+          value={loading ? "â€¦" : fmt(outstanding)}
           icon={TrendingUp}
         />
       </div>
@@ -248,7 +244,7 @@ function ComptableHome() {
               >
                 <div>
                   <p className="font-semibold text-[color:var(--navy)]">
-                    {x.invoice?.invoice_no ?? "—"}
+                    {x.invoice?.invoice_no ?? "â€”"}
                   </p>
                   <p className="text-xs text-muted-foreground">Mode: {x.method}</p>
                 </div>
@@ -266,8 +262,8 @@ function ComptableHome() {
           transition={{ delay: 0.1 }}
           className="rounded-3xl gradient-hero p-7 text-white"
         >
-          <h3 className="text-lg font-bold">Rapport synthétique</h3>
-          <p className="text-white/70 text-sm">Journée en cours</p>
+          <h3 className="text-lg font-bold">Rapport synthÃ©tique</h3>
+          <p className="text-white/70 text-sm">JournÃ©e en cours</p>
           <div className="mt-6 space-y-3">
             {[
               {
@@ -278,15 +274,15 @@ function ComptableHome() {
                         invoices.reduce((s, f) => s + Number(f.total || 0), 0) / invoicesCount,
                       ),
                     )
-                  : "—",
+                  : "â€”",
               },
               {
                 label: "Paiement moyen",
-                value: payments.length ? fmt(Math.round(paymentsSum / payments.length)) : "—",
+                value: payments.length ? fmt(Math.round(paymentsSum / payments.length)) : "â€”",
               },
               {
                 label: "Part Mobile Money",
-                value: paymentsSum ? Math.round((mobileMoneySum / paymentsSum) * 100) + "%" : "—",
+                value: paymentsSum ? Math.round((mobileMoneySum / paymentsSum) * 100) + "%" : "â€”",
               },
             ].map((k) => (
               <div
@@ -304,7 +300,7 @@ function ComptableHome() {
             disabled={aiLoading}
             className="mt-6 w-full rounded-2xl bg-white/10 hover:bg-white/15 text-white font-semibold py-3 border border-white/20 disabled:opacity-60"
           >
-            IA: Générer le résumé du jour
+            Generer le resume du jour
           </button>
           {report ? (
             <div className="mt-4 rounded-2xl bg-white/5 border border-white/15 p-4 text-sm whitespace-pre-wrap">
@@ -316,3 +312,5 @@ function ComptableHome() {
     </DashboardLayout>
   );
 }
+
+

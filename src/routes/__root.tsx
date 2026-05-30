@@ -11,6 +11,7 @@ import { useEffect } from "react";
 import { Toaster } from "sonner";
 
 import { useAuth, useAuditLog } from "@/lib/store";
+import { homeText, useI18n } from "@/lib/i18n";
 
 import appCss from "../styles.css?url";
 
@@ -102,8 +103,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  const lang = useI18n((s) => s.lang);
   return (
-    <html lang="fr">
+    <html lang={lang}>
       <head>
         <HeadContent />
       </head>
@@ -122,7 +124,33 @@ function RootComponent() {
   const touch = useAuth((s: { touch: () => void }) => s.touch);
   const lastActivityAt = useAuth((s: { lastActivityAt: number | null }) => s.lastActivityAt);
   const auditAdd = useAuditLog((s: { add: (e: any) => void }) => s.add);
+  const lang = useI18n((s) => s.lang);
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const text = homeText[lang].welcome;
+    const speak = () => {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
+        utterance.rate = 0.95;
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        // Some browsers block autoplayed speech until the first user interaction.
+      }
+    };
+
+    speak();
+    const timer = window.setTimeout(speak, 80);
+    const onFirstInteraction = () => speak();
+    window.addEventListener("pointerdown", onFirstInteraction, { once: true, passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pointerdown", onFirstInteraction);
+    };
+  }, [lang]);
 
   useEffect(() => {
     const unsub = router.subscribe("onResolved", () => {

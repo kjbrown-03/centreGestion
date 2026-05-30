@@ -1,4 +1,4 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 "use client";
 
 import { createFileRoute } from "@tanstack/react-router";
@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getSupabaseAsync } from "@/lib/supabase";
-import { hasGemini, patientReminders } from "@/lib/ai";
+import { patientReminders } from "@/lib/ai";
+import { whatsappUrlFor } from "@/lib/contact";
 import {
   User,
   Calendar,
@@ -56,8 +57,8 @@ function PatientDashboard() {
   const [activePresc, setActivePresc] = useState<any | null>(null);
   const [activeInvoice, setActiveInvoice] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [aiLoading, setAiLoading] = useState<boolean>(false);
-  const [aiText, setAiText] = useState<string>("");
+  const [reminderLoading, setReminderLoading] = useState<boolean>(false);
+  const [reminderText, setReminderText] = useState<string>("");
   const [authEmail, setAuthEmail] = useState<string | null>(null);
 
   useEffect(() => {
@@ -217,13 +218,7 @@ function PatientDashboard() {
 
   async function runAiReminders() {
     try {
-      if (!hasGemini()) {
-        toast.error(
-          "Clé IA manquante (VITE_GEMINI_API_KEY). Ajoutez-la dans .env pour activer l'assistant.",
-        );
-        return;
-      }
-      setAiLoading(true);
+      setReminderLoading(true);
       const nextAptIso = upcomingAppointments[0]?.scheduled_at as string | undefined;
       const latestItems = ((patientPrescriptions?.[0]?.items ?? []) as any[]).map((i: any) => ({
         name: i.medicine_name,
@@ -231,11 +226,11 @@ function PatientDashboard() {
         frequency: i.frequency ?? undefined,
       }));
       const text = await patientReminders({ nextAppointmentIso: nextAptIso, meds: latestItems });
-      setAiText(text);
+      setReminderText(text);
     } catch (err: any) {
-      toast.error(err?.message ?? "Assistant IA indisponible.");
+      toast.error(err?.message ?? "Rappels indisponibles.");
     } finally {
-      setAiLoading(false);
+      setReminderLoading(false);
     }
   }
 
@@ -314,7 +309,7 @@ function PatientDashboard() {
 
         <div className="mt-6 space-y-3 max-h-[380px] overflow-auto pr-1">
           {loading ? (
-            <div className="text-sm text-muted-foreground">Chargement…</div>
+            <div className="text-sm text-muted-foreground">Chargement...</div>
           ) : (messages ?? []).length === 0 ? (
             <div className="text-sm text-muted-foreground">Aucun message.</div>
           ) : (
@@ -348,7 +343,7 @@ function PatientDashboard() {
           <input
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Votre message…"
+            placeholder="Votre message..."
             className="flex-1 rounded-2xl border bg-background px-4 py-3 text-sm outline-none"
           />
           <Button
@@ -387,26 +382,26 @@ function PatientDashboard() {
           icon={FileText}
         />
         <StatCard
-          label="Allergies Identifiées"
+          label="Allergies identifiées"
           value={patient ? (patient.allergies?.length ?? 0) : 0}
           hint="Dossier médical unifié"
           icon={AlertCircle}
         />
       </div>
 
-      {/* IA reminders */}
+      {/* Rappels sante */}
       <div className="mt-4 space-y-3">
         <Button
           onClick={() => void runAiReminders()}
-          disabled={aiLoading}
+          disabled={reminderLoading}
           className="rounded-2xl gradient-mint text-[color:var(--navy)] font-semibold px-5 py-3 border-none shadow-mint disabled:opacity-60"
         >
-          Assistant IA: Rappels & Conseils
+          Rappels & conseils sante
         </Button>
-        {aiText ? (
+        {reminderText ? (
           <Card className="rounded-2xl border bg-muted/40">
             <CardContent className="pt-4">
-              <pre className="whitespace-pre-wrap text-sm text-[color:var(--navy)]">{aiText}</pre>
+              <pre className="whitespace-pre-wrap text-sm text-[color:var(--navy)]">{reminderText}</pre>
             </CardContent>
           </Card>
         ) : null}
@@ -420,7 +415,7 @@ function PatientDashboard() {
           </TabsTrigger>
           <TabsTrigger value="medical" className="rounded-xl flex items-center gap-2">
             <FileHeart className="size-4" />
-            <span className="hidden sm:inline">Dossier Médical</span>
+            <span className="hidden sm:inline">Dossier médical</span>
           </TabsTrigger>
           <TabsTrigger value="prescriptions" className="rounded-xl flex items-center gap-2">
             <FileText className="size-4" />
@@ -544,7 +539,7 @@ function PatientDashboard() {
                           </div>
                           <div>
                             <p className="font-semibold text-[color:var(--navy)]">
-                              {apt.practitioner?.full_name || "—"}
+                              {apt.practitioner?.full_name || "-"}
                             </p>
                             <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
                               <Clock className="size-3" />{" "}
@@ -597,7 +592,7 @@ function PatientDashboard() {
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <p className="font-semibold text-[color:var(--navy)]/80">
-                              {apt.practitioner?.full_name || "—"}
+                              {apt.practitioner?.full_name || "-"}
                             </p>
                             <p className="text-xs text-muted-foreground mt-0.5">
                               Le{" "}
@@ -678,7 +673,7 @@ function PatientDashboard() {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-[color:var(--navy)]">
-                    {patient ? `${patient.first_name} ${patient.last_name}` : "—"}
+                    {patient ? `${patient.first_name} ${patient.last_name}` : "-"}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-0.5">Dossier médical unifié 2KC</p>
                 </div>
@@ -692,7 +687,7 @@ function PatientDashboard() {
                   <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">
                     {patient?.birth_date
                       ? format(new Date(patient.birth_date), "dd MMMM yyyy", { locale: fr })
-                      : "—"}
+                      : "-"}
                   </p>
                 </div>
                 <div>
@@ -700,16 +695,14 @@ function PatientDashboard() {
                     E-mail
                   </p>
                   <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">
-                    {authEmail ?? "—"}
+                    {authEmail ?? "-"}
                   </p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
                     Téléphone
                   </p>
-                  <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">
-                    {patient?.phone ?? "—"}
-                  </p>
+                  {patient?.phone ? (<a href={whatsappUrlFor(patient.phone)} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[color:var(--navy)] mt-0.5 inline-flex hover:underline">{patient.phone}</a>) : (<p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">-</p>)}
                 </div>
               </div>
             </Card>
@@ -731,7 +724,7 @@ function PatientDashboard() {
                         key={a}
                         className="px-3.5 py-2.5 bg-red-500/5 border border-red-500/10 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2"
                       >
-                        ⚠️ {a}
+                        ⚠ {a}
                       </div>
                     ))}
                   </div>
@@ -787,7 +780,7 @@ function PatientDashboard() {
                     </h4>
                     <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
                       <Activity className="size-3.5" /> Posologie :{" "}
-                      {[m.dosage, m.frequency, m.duration].filter(Boolean).join(" · ") || "—"}
+                      {[m.dosage, m.frequency, m.duration].filter(Boolean).join(" · ") || "-"}
                     </p>
                   </div>
                   <span className="px-2.5 py-1 bg-[color:var(--mint)]/20 border border-[color:var(--mint)]/30 text-[color:var(--navy)] text-[10px] rounded-full font-bold uppercase tracking-wider shrink-0 shadow-sm">
@@ -805,7 +798,7 @@ function PatientDashboard() {
             <CardHeader className="p-0 mb-6">
               <CardTitle className="text-xl font-bold text-[color:var(--navy)] flex items-center gap-2">
                 <FileText className="size-5 text-[color:var(--mint)]" />
-                Vos Ordonnances Médicales
+                Vos ordonnances médicales
               </CardTitle>
             </CardHeader>
 
@@ -826,7 +819,7 @@ function PatientDashboard() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Prescrit par {presc.practitioner?.full_name || "—"}
+                      Prescrit par {presc.practitioner?.full_name || "-"}
                     </p>
 
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -893,15 +886,13 @@ function PatientDashboard() {
                   <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mt-1">
                     Centre de Santé Pluridisciplinaire
                   </p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    12 Rue de la Santé, 75014 Paris • Tél: 01 40 40 40 40
-                  </p>
+                  <p className="text-xs text-slate-400 mt-1">Douala, Cameroun • Tél: <a href={whatsappUrlFor()} target="_blank" rel="noreferrer" className="hover:underline">693904197</a></p>
                 </div>
                 <div className="text-left sm:text-right text-xs text-slate-500">
                   <p className="font-bold text-slate-800">
-                    {activePresc.practitioner?.full_name || "—"}
+                    {activePresc.practitioner?.full_name || "-"}
                   </p>
-                  <p>Médecin Généraliste</p>
+                  <p>Médecin généraliste</p>
                   <p className="mt-1 font-mono text-[10px] text-slate-400">RPPS: 10009876543</p>
                 </div>
               </div>
@@ -911,7 +902,7 @@ function PatientDashboard() {
                 <div>
                   <span className="text-slate-400">Patient : </span>
                   <span className="font-bold text-slate-800">
-                    {patient ? `${patient.first_name} ${patient.last_name}` : "—"}
+                    {patient ? `${patient.first_name} ${patient.last_name}` : "-"}
                   </span>
                 </div>
                 <div>
@@ -933,7 +924,7 @@ function PatientDashboard() {
                     <div key={idx} className="space-y-1">
                       <p className="font-bold text-slate-900 text-base">• {m.medicine_name}</p>
                       <p className="text-sm text-slate-600 pl-4 font-mono">
-                        {[m.dosage, m.frequency, m.duration].filter(Boolean).join(" — ")}
+                        {[m.dosage, m.frequency, m.duration].filter(Boolean).join(" - ")}
                       </p>
                     </div>
                   ))}
@@ -960,7 +951,7 @@ function PatientDashboard() {
                     2KC SANTE
                   </div>
                   <p className="text-[11px] font-bold text-slate-800">
-                    {activePresc.practitioner?.full_name || "—"}
+                    {activePresc.practitioner?.full_name || "-"}
                   </p>
                 </div>
               </div>
@@ -1006,9 +997,7 @@ function PatientDashboard() {
                   <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mt-1">
                     Centre de Santé Pluridisciplinaire
                   </p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    12 Rue de la Santé, 75014 Paris • Tél: 01 40 40 40 40
-                  </p>
+                  <p className="text-xs text-slate-400 mt-1">Douala, Cameroun • Tél: <a href={whatsappUrlFor()} target="_blank" rel="noreferrer" className="hover:underline">693904197</a></p>
                 </div>
                 <div className="text-left sm:text-right text-xs text-slate-500">
                   <p className="font-bold text-slate-800">Facture {activeInvoice.invoice_no}</p>
@@ -1023,7 +1012,7 @@ function PatientDashboard() {
                   <div>
                     <span className="text-slate-400">Patient : </span>
                     <span className="font-bold text-slate-800">
-                      {patient ? `${patient.first_name} ${patient.last_name}` : "—"}
+                      {patient ? `${patient.first_name} ${patient.last_name}` : "-"}
                     </span>
                   </div>
                   <div>
@@ -1090,3 +1079,4 @@ function PatientDashboard() {
     </DashboardLayout>
   );
 }
+

@@ -1,4 +1,4 @@
-export type Patient = {
+﻿export type Patient = {
   id: string;
   name: string;
   dateOfBirth: string;
@@ -15,7 +15,7 @@ export type Appointment = {
   patientId: string;
   dateTime: string;
   reason: string;
-  status: "confirmé" | "en attente" | "complété";
+  status: "confirmÃ©" | "en attente" | "complÃ©tÃ©";
   doc: string;
   notes?: string;
 };
@@ -35,13 +35,13 @@ export const MOCK_PATIENTS: Patient[] = [
     name: "Pierre Durand",
     dateOfBirth: "1988-06-15",
     email: "pierre.durand@gmail.com",
-    phone: "06 12 34 56 78",
+    phone: "693904197",
     bloodType: "A+",
-    allergies: ["Pénicilline", "Pollen de bouleau"],
-    medicalHistory: ["Appendicectomie (2012)", "Hypertension artérielle légère sous suivi"],
+    allergies: ["PÃ©nicilline", "Pollen de bouleau"],
+    medicalHistory: ["Appendicectomie (2012)", "Hypertension artÃ©rielle lÃ©gÃ¨re sous suivi"],
     currentMedications: [
-      { id: "med1", name: "Paracétamol 500mg", dosage: "1 comprimé si douleur, max 3/jour" },
-      { id: "med2", name: "Ramipril 5mg", dosage: "1 comprimé le matin" }
+      { id: "med1", name: "ParacÃ©tamol 500mg", dosage: "1 comprimÃ© si douleur, max 3/jour" },
+      { id: "med2", name: "Ramipril 5mg", dosage: "1 comprimÃ© le matin" }
     ]
   }
 ];
@@ -51,17 +51,17 @@ export const MOCK_APPOINTMENTS: Appointment[] = [
     id: "apt1",
     patientId: "p1",
     dateTime: "2026-05-28T09:30:00",
-    reason: "Suivi de tension artérielle",
-    status: "confirmé",
-    doc: "Dr. Karim Cissé"
+    reason: "Suivi de tension artÃ©rielle",
+    status: "confirmÃ©",
+    doc: "Dr. Karim CissÃ©"
   },
   {
     id: "apt2",
     patientId: "p1",
     dateTime: "2026-05-24T14:15:00",
     reason: "Bilan annuel complet",
-    status: "complété",
-    doc: "Dr. Aïcha Karim",
+    status: "complÃ©tÃ©",
+    doc: "Dr. AÃ¯cha Karim",
     notes: "Tension stable (12/8). Continuer le traitement en cours. Bilan sanguin normal."
   },
   {
@@ -69,9 +69,9 @@ export const MOCK_APPOINTMENTS: Appointment[] = [
     patientId: "p1",
     dateTime: "2026-04-12T10:00:00",
     reason: "Renouvellement d'ordonnance",
-    status: "complété",
-    doc: "Dr. Karim Cissé",
-    notes: "Traitement renouvelé pour 6 mois. Prochain contrôle en mai."
+    status: "complÃ©tÃ©",
+    doc: "Dr. Karim CissÃ©",
+    notes: "Traitement renouvelÃ© pour 6 mois. Prochain contrÃ´le en mai."
   }
 ];
 
@@ -80,21 +80,21 @@ export const MOCK_PRESCRIPTIONS: Prescription[] = [
     id: "ORD-2026-0042",
     patientId: "p1",
     createdAt: "2026-05-24T15:00:00",
-    doc: "Dr. Aïcha Karim",
+    doc: "Dr. AÃ¯cha Karim",
     medications: [
-      { medicationId: "Ramipril 5mg", dosage: "1 comprimé par jour", frequency: "Le matin", duration: "6 mois" },
-      { medicationId: "Paracétamol 500mg", dosage: "1 à 2 comprimés par prise", frequency: "Toutes les 6h si douleur", duration: "1 mois" }
+      { medicationId: "Ramipril 5mg", dosage: "1 comprimÃ© par jour", frequency: "Le matin", duration: "6 mois" },
+      { medicationId: "ParacÃ©tamol 500mg", dosage: "1 Ã  2 comprimÃ©s par prise", frequency: "Toutes les 6h si douleur", duration: "1 mois" }
     ],
-    notes: "Veuillez surveiller régulièrement votre tension à domicile."
+    notes: "Veuillez surveiller rÃ©guliÃ¨rement votre tension Ã  domicile."
   },
   {
     id: "ORD-2026-0012",
     patientId: "p1",
     createdAt: "2026-04-12T10:30:00",
-    doc: "Dr. Karim Cissé",
+    doc: "Dr. Karim CissÃ©",
     medications: [
-      { medicationId: "Ramipril 5mg", dosage: "1 comprimé par jour", frequency: "Le matin", duration: "3 mois" }
+      { medicationId: "Ramipril 5mg", dosage: "1 comprimÃ© par jour", frequency: "Le matin", duration: "3 mois" }
     ],
-    notes: "Prendre à heure fixe de préférence."
+    notes: "Prendre Ã  heure fixe de prÃ©fÃ©rence."
   }
 ];

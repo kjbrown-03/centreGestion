@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { Activity, Languages, Menu, X } from "lucide-react";
 import { useState } from "react";
@@ -12,14 +13,16 @@ export function Navbar() {
   const roleRoute = user ? ROLES.find((r) => r.id === user.role)?.route ?? "/login" : "/login";
   const lang = useI18n((s) => s.lang);
   const toggleLang = useI18n((s) => s.toggleLang);
+  const path = useRouterState({ select: (s: any) => s.location.pathname });
   const [open, setOpen] = useState(false);
   const t = homeText[lang];
+  const anchor = (id: string) => (path === "/" ? `#${id}` : `/#${id}`);
 
   const links = [
-    { href: "#services", label: t.navServices },
+    { href: anchor("services"), label: t.navServices },
     { href: "/centre", label: t.navAbout },
-    { href: "#team", label: t.navTeam },
-    { href: "#contact", label: t.navContact },
+    { href: anchor("team"), label: t.navTeam },
+    { href: anchor("contact"), label: t.navContact },
   ];
 
   return (

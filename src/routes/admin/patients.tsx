@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+﻿import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { getSupabase } from "@/lib/supabase";
+import { whatsappUrlFor } from "@/lib/contact";
 import { Plus, Pencil, Trash2, Search, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -120,7 +121,7 @@ function PatientsAdmin() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Rechercher (code, nom, téléphone)..."
+              placeholder="Rechercher (code, nom, tÃ©lÃ©phone)..."
               className="pl-9 pr-4 py-2.5 rounded-xl border bg-card text-sm w-full outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
             />
           </div>
@@ -152,7 +153,7 @@ function PatientsAdmin() {
                 <th className="px-5 py-4 font-semibold text-[color:var(--navy)]">Nom</th>
                 <th className="px-5 py-4 font-semibold text-[color:var(--navy)]">Sexe</th>
                 <th className="px-5 py-4 font-semibold text-[color:var(--navy)]">Naissance</th>
-                <th className="px-5 py-4 font-semibold text-[color:var(--navy)]">Téléphone</th>
+                <th className="px-5 py-4 font-semibold text-[color:var(--navy)]">TÃ©lÃ©phone</th>
                 <th className="px-5 py-4 font-semibold text-[color:var(--navy)]">Adresse</th>
                 <th className="px-5 py-4 font-semibold text-[color:var(--navy)]" />
               </tr>
@@ -164,15 +165,15 @@ function PatientsAdmin() {
                   <td className="px-5 py-4 font-semibold text-[color:var(--navy)]">{r.last_name} {r.first_name}</td>
                   <td className="px-5 py-4">{r.sex}</td>
                   <td className="px-5 py-4">{new Date(r.birth_date).toLocaleDateString("fr-FR")}</td>
-                  <td className="px-5 py-4">{r.phone || "—"}</td>
-                  <td className="px-5 py-4">{r.address || "—"}</td>
+                  <td className="px-5 py-4">{r.phone ? (<a href={whatsappUrlFor(r.phone)} target="_blank" rel="noreferrer" className="hover:underline">{r.phone}</a>) : ("-")}</td>
+                  <td className="px-5 py-4">{r.address || "â€”"}</td>
                   <td className="px-5 py-4">
                     <div className="flex gap-2 justify-end">
                       <button
                         onClick={() => openEdit(r)}
                         className="inline-flex items-center gap-1.5 text-xs rounded-lg border px-3 py-2 hover:bg-muted transition"
                       >
-                        <Pencil className="size-3.5" /> Éditer
+                        <Pencil className="size-3.5" /> Ã‰diter
                       </button>
                       <button
                         onClick={() => void handleRemove(r.id)}
@@ -189,7 +190,7 @@ function PatientsAdmin() {
         </div>
 
         {!loading && filtered.length === 0 && (
-          <p className="text-center text-muted-foreground py-10">Aucun patient trouvé.</p>
+          <p className="text-center text-muted-foreground py-10">Aucun patient trouvÃ©.</p>
         )}
       </div>
 
@@ -323,7 +324,7 @@ function PatientForm({
             <Field label="Nom">
               <input required value={form.last_name} onChange={(e) => set("last_name", e.target.value)} className={inp} />
             </Field>
-            <Field label="Prénom">
+            <Field label="PrÃ©nom">
               <input required value={form.first_name} onChange={(e) => set("first_name", e.target.value)} className={inp} />
             </Field>
           </div>
@@ -332,7 +333,7 @@ function PatientForm({
             <Field label="Date de naissance">
               <input type="date" required value={form.birth_date} onChange={(e) => set("birth_date", e.target.value)} className={inp} />
             </Field>
-            <Field label="Téléphone">
+            <Field label="TÃ©lÃ©phone">
               <input value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} className={inp} />
             </Field>
           </div>

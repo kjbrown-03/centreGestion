@@ -1,4 +1,4 @@
--- 2KC Centre de Santé — Supabase/PostgreSQL schema (v2, complete)
+﻿-- 2KC Centre de SantÃ© â€” Supabase/PostgreSQL schema (v2, complete)
 -- Copy/paste into Supabase SQL editor.
 
 create extension if not exists pgcrypto;
@@ -529,6 +529,13 @@ drop policy if exists profiles_read_self on app.profiles;
 create policy profiles_read_self on app.profiles
 for select using (user_id = auth.uid() or app.is_admin());
 
+drop policy if exists profiles_read_practitioners_for_staff on app.profiles;
+create policy profiles_read_practitioners_for_staff on app.profiles
+for select using (
+  app.has_any_role(array['admin','secretaire','directeur']::app.user_role[])
+  and role in ('medecin'::app.user_role, 'infirmier'::app.user_role)
+);
+
 drop policy if exists profiles_insert_self on app.profiles;
 create policy profiles_insert_self on app.profiles
 for insert with check (user_id = auth.uid());
@@ -892,11 +899,11 @@ for insert with check (auth.uid() is not null);
 
 insert into app.patients (patient_code, first_name, last_name, sex, birth_date, phone, address)
 values
-  ('2KC00000000', 'Chantal', 'Ndzi', 'F', '1994-06-12', '+237690000001', 'Douala'),
-  ('2KC00000001', 'Junior', 'Kemajou', 'M', '1988-10-02', '+237690000002', 'Yaoundé'),
-  ('2KC00000002', 'Estelle', 'Nkom', 'F', '2001-01-19', '+237690000003', 'Bafoussam'),
-  ('2KC00000003', 'Arnaud', 'Mbida', 'M', '1979-04-21', '+237690000004', 'Garoua'),
-  ('2KC00000004', 'Prudence', 'Etoa', 'F', '1999-09-09', '+237690000005', 'Bertoua')
+  ('2KC00000000', 'Chantal', 'Ndzi', 'F', '1994-06-12', '693904197', 'Douala'),
+  ('2KC00000001', 'Junior', 'Kemajou', 'M', '1988-10-02', '693904197', 'YaoundÃ©'),
+  ('2KC00000002', 'Estelle', 'Nkom', 'F', '2001-01-19', '693904197', 'Bafoussam'),
+  ('2KC00000003', 'Arnaud', 'Mbida', 'M', '1979-04-21', '693904197', 'Garoua'),
+  ('2KC00000004', 'Prudence', 'Etoa', 'F', '1999-09-09', '693904197', 'Bertoua')
 on conflict do nothing;
 
 insert into app.stock_items (kind, name, category, unit, stock, threshold, unit_price, expiry_date)
@@ -930,7 +937,7 @@ from app.profiles;
 
 grant select on public.profiles to anon, authenticated;
 
--- ===================== MESSAGES (PATIENT ↔ PRATICIEN/SECRÉTARIAT) =====================
+-- ===================== MESSAGES (PATIENT â†” PRATICIEN/SECRÃ‰TARIAT) =====================
 
 create table if not exists app.messages (
   id uuid primary key default gen_random_uuid(),

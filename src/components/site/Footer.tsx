@@ -1,4 +1,5 @@
 import { Activity, Mail, MapPin, Phone } from "lucide-react";
+import { CENTRE_PHONE_DISPLAY, WHATSAPP_URL } from "@/lib/contact";
 
 export function Footer() {
   return (
@@ -18,7 +19,9 @@ export function Footer() {
           </div>
           <div className="space-y-3 text-white/80">
             <div className="flex items-start gap-3"><MapPin className="size-4 mt-0.5 text-[color:var(--mint)]" /> Douala, Cameroun</div>
-            <div className="flex items-center gap-3"><Phone className="size-4 text-[color:var(--mint)]" /> +237 690 000 000</div>
+            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="flex items-center gap-3 hover:text-white transition">
+              <Phone className="size-4 text-[color:var(--mint)]" /> WhatsApp {CENTRE_PHONE_DISPLAY}
+            </a>
             <div className="flex items-center gap-3"><Mail className="size-4 text-[color:var(--mint)]" /> contact@2kc-sante.cm</div>
           </div>
           <div>

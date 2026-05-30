@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 declare const Deno: any;
 
 type RoleId =
@@ -92,7 +92,7 @@ async function seedSecretaryQueue(adminClient: any, createdBy: string) {
       sex: "F",
       birth_date: "1994-06-12",
       blood_type: "O+",
-      phone: "+237690000001",
+      phone: "693904197",
       address: "Douala",
       created_by: createdBy,
     })
@@ -109,6 +109,57 @@ async function seedSecretaryQueue(adminClient: any, createdBy: string) {
     reason: "Consultation de demonstration",
     created_by: createdBy,
   });
+}
+
+async function ensureDemoUser(adminClient: any, email: string) {
+  const demo = DEMO[email];
+  let user = await findUserByEmail(adminClient, email);
+  if (!user?.id) {
+    const { data, error } = await adminClient.auth.admin.createUser({
+      email,
+      password: demo.password,
+      email_confirm: true,
+      user_metadata: {
+        role: demo.role,
+        full_name: demo.name,
+        first_name: demo.role === "patient" ? "Pierre" : undefined,
+        last_name: demo.role === "patient" ? "Durand" : undefined,
+        sex: demo.role === "patient" ? "M" : undefined,
+        birth_date: demo.role === "patient" ? "1990-01-01" : undefined,
+        blood_type: demo.role === "patient" ? "O+" : undefined,
+      },
+    });
+    if (error) throw error;
+    user = data.user;
+  } else {
+    const { error } = await adminClient.auth.admin.updateUserById(user.id, {
+      password: demo.password,
+      email_confirm: true,
+      user_metadata: { ...(user.user_metadata ?? {}), role: demo.role, full_name: demo.name },
+    });
+    if (error) throw error;
+  }
+
+  if (!user?.id) throw new Error(`Demo user unavailable: ${email}`);
+
+  const profile = await (adminClient as any)
+    .schema("app")
+    .from("profiles")
+    .upsert(
+      { user_id: user.id, role: demo.role, full_name: demo.name },
+      { onConflict: "user_id" },
+    );
+  if (profile.error) throw profile.error;
+
+  return user;
+}
+
+async function seedAllDemoUsers(adminClient: any) {
+  const users: Record<string, any> = {};
+  for (const email of Object.keys(DEMO)) {
+    users[email] = await ensureDemoUser(adminClient, email);
+  }
+  return users;
 }
 
 Deno.serve(async (req: Request) => {
@@ -134,38 +185,9 @@ Deno.serve(async (req: Request) => {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
-    let user = await findUserByEmail(adminClient, email);
-    if (!user?.id) {
-      const { data, error } = await adminClient.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          role: demo.role,
-          full_name: demo.name,
-          first_name: demo.role === "patient" ? "Pierre" : undefined,
-          last_name: demo.role === "patient" ? "Durand" : undefined,
-          sex: demo.role === "patient" ? "M" : undefined,
-          birth_date: demo.role === "patient" ? "1990-01-01" : undefined,
-          blood_type: demo.role === "patient" ? "O+" : undefined,
-        },
-      });
-      if (error) throw error;
-      user = data.user;
-    } else {
-      await adminClient.auth.admin.updateUserById(user.id, {
-        password,
-        email_confirm: true,
-        user_metadata: { ...(user.user_metadata ?? {}), role: demo.role, full_name: demo.name },
-      });
-    }
-
+    const allUsers = await seedAllDemoUsers(adminClient);
+    const user = allUsers[email];
     if (!user?.id) return json(500, { error: "Demo user unavailable" });
-
-    await (adminClient as any)
-      .schema("app")
-      .from("profiles")
-      .upsert({ user_id: user.id, role: demo.role, full_name: demo.name }, { onConflict: "user_id" });
 
     await seedStock(adminClient as any);
     await seedSecretaryQueue(adminClient as any, user.id);
@@ -188,7 +210,7 @@ Deno.serve(async (req: Request) => {
             sex: "M",
             birth_date: "1990-01-01",
             blood_type: "O+",
-            phone: "+237690000000",
+            phone: "693904197",
             address: "Douala",
             created_by: user.id,
           })
