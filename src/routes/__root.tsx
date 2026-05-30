@@ -8,7 +8,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Toaster } from "sonner";
 
 import { useAuth, useAuditLog } from "@/lib/store";
@@ -128,13 +128,19 @@ function RootComponent() {
   const lang = useI18n((s) => s.lang);
   const router = useRouter();
   const pathname = useRouterState({ select: (s: any) => s.location.pathname });
+  const homeVoiceKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     if (pathname !== "/") {
       window.speechSynthesis.cancel();
+      homeVoiceKeyRef.current = null;
       return;
     }
+    const voiceKey = pathname;
+    if (homeVoiceKeyRef.current === voiceKey) return;
+    homeVoiceKeyRef.current = voiceKey;
+
     const text = homeText[lang].welcome;
     const speak = () => {
       try {
@@ -149,14 +155,8 @@ function RootComponent() {
     };
 
     speak();
-    const timer = window.setTimeout(speak, 350);
-    const onFirstInteraction = () => speak();
-    window.speechSynthesis.onvoiceschanged = speak;
-    window.addEventListener("pointerdown", onFirstInteraction, { once: true, passive: true });
     return () => {
-      window.clearTimeout(timer);
-      window.speechSynthesis.onvoiceschanged = null;
-      window.removeEventListener("pointerdown", onFirstInteraction);
+      window.speechSynthesis.cancel();
     };
   }, [lang, pathname]);
 

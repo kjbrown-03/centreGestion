@@ -1028,6 +1028,15 @@ from app.profiles;
 
 grant select on public.profiles to anon, authenticated;
 
+-- Grants required by Supabase clients and Edge Functions using the app schema.
+grant usage on schema app to anon, authenticated, service_role;
+grant all privileges on all tables in schema app to service_role;
+grant all privileges on all sequences in schema app to service_role;
+grant execute on all functions in schema app to service_role;
+alter default privileges in schema app grant all privileges on tables to service_role;
+alter default privileges in schema app grant all privileges on sequences to service_role;
+alter default privileges in schema app grant execute on functions to service_role;
+
 -- ===================== MESSAGES (PATIENT <-> PRATICIEN/SECRÉTARIAT) =====================
 
 create table if not exists app.messages (
@@ -1082,4 +1091,3 @@ for select using (app.has_role('secretaire'));
 drop policy if exists messages_insert_secretaire on app.messages;
 create policy messages_insert_secretaire on app.messages
 for insert with check (app.has_role('secretaire') and sender = 'secretaire');
-

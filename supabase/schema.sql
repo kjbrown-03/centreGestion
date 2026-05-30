@@ -1,4 +1,4 @@
-﻿-- 2KC Centre de SantÃ© â€” Supabase/PostgreSQL schema
+﻿-- 2KC Centre de Santé - Supabase/PostgreSQL schema
 -- Copy/paste into Supabase SQL editor.
 
 -- Extensions
@@ -550,6 +550,6 @@ for insert with check (auth.uid() is not null);
 insert into app.patients (patient_code, first_name, last_name, sex, birth_date, phone, address)
 values
   ('2KC00000000', 'Chantal', 'Ndzi', 'F', '1994-06-12', '693904197', 'Douala'),
-  ('2KC00000001', 'Junior', 'Kemajou', 'M', '1988-10-02', '693904197', 'YaoundÃ©'),
+  ('2KC00000001', 'Junior', 'Kemajou', 'M', '1988-10-02', '693904197', 'Yaoundé'),
   ('2KC00000002', 'Estelle', 'Nkom', 'F', '2001-01-19', '693904197', 'Bafoussam')
 on conflict do nothing;
