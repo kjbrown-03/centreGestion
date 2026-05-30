@@ -36,7 +36,7 @@ function hasAny(text: string, words: string[]) {
   return words.some((word) => text.includes(word));
 }
 
-async function askGemini(prompt: string, maxOutputTokens = 520): Promise<string | null> {
+async function askGemini(prompt: string, maxOutputTokens = 1200): Promise<string | null> {
   try {
     const supabase = await getSupabaseAsync();
     const { data, error } = await supabase.functions.invoke("ai-assistant", {
@@ -55,6 +55,7 @@ function buildMedicalPrompt(params: ChatbotParams) {
   return [
     "Tu es l'assistant IA du Centre de Santé 2KC au Cameroun.",
     "Réponds en français clair, court et utile.",
+    "Donne une réponse complète et termine toujours par une phrase finale claire.",
     "Ne pose jamais de diagnostic définitif et ne remplace pas une consultation médicale.",
     "Si les symptômes semblent graves, conseille de contacter le centre sur WhatsApp au 693904197 ou d'aller aux urgences.",
     "Pour les professionnels du centre, donne une aide opérationnelle liée au flux de soins, sans inventer de données absentes.",

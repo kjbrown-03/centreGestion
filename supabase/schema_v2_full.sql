@@ -603,6 +603,13 @@ for select using (
   and role in ('medecin'::app.user_role, 'infirmier'::app.user_role)
 );
 
+drop policy if exists profiles_read_medecins_for_patients on app.profiles;
+create policy profiles_read_medecins_for_patients on app.profiles
+for select using (
+  app.has_role('patient')
+  and role = 'medecin'::app.user_role
+);
+
 drop policy if exists profiles_insert_self on app.profiles;
 create policy profiles_insert_self on app.profiles
 for insert with check (user_id = auth.uid());

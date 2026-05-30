@@ -6,30 +6,49 @@ type CredentialFileParams = {
   source: "inscription_patient" | "admin_creation" | "admin_reset";
 };
 
-function safeFilePart(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
+const STORAGE_KEY = "2kc_credentials_history";
+
+type StoredCredential = CredentialFileParams & {
+  createdAt: string;
+};
+
+function readHistory(): StoredCredential[] {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 export function downloadCredentialsTxt(params: CredentialFileParams) {
   if (typeof window === "undefined" || typeof document === "undefined") return;
 
-  const createdAt = new Date().toLocaleString("fr-FR");
+  const entry: StoredCredential = {
+    ...params,
+    createdAt: new Date().toISOString(),
+  };
+  const history = [...readHistory(), entry];
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+
   const content = [
-    "Identifiants utilisateur - Centre de Sante 2KC",
-    "================================================",
+    "Identifiants utilisateurs - Centre de Sante 2KC",
+    "=================================================",
     "",
-    `Source: ${params.source}`,
-    `Date de creation: ${createdAt}`,
+    `Derniere mise a jour: ${new Date().toLocaleString("fr-FR")}`,
+    `Nombre de comptes dans ce fichier: ${history.length}`,
     "",
-    `Nom: ${params.fullName?.trim() || "-"}`,
-    `Email: ${params.email}`,
-    `Role: ${params.role}`,
-    `Mot de passe: ${params.password}`,
+    ...history.flatMap((item, index) => [
+      `#${index + 1}`,
+      `Source: ${item.source}`,
+      `Date de creation: ${new Date(item.createdAt).toLocaleString("fr-FR")}`,
+      `Nom: ${item.fullName?.trim() || "-"}`,
+      `Email: ${item.email}`,
+      `Role: ${item.role}`,
+      `Mot de passe: ${item.password}`,
+      "",
+    ]),
     "",
     "Important: conservez ce fichier dans un endroit securise.",
   ].join("\n");
@@ -38,7 +57,7 @@ export function downloadCredentialsTxt(params: CredentialFileParams) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `identifiants-2kc-${safeFilePart(params.email) || "utilisateur"}.txt`;
+  link.download = "identifiants-utilisateurs-2kc.txt";
   document.body.appendChild(link);
   link.click();
   link.remove();

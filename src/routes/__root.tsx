@@ -135,28 +135,27 @@ function RootComponent() {
       window.speechSynthesis.cancel();
       return;
     }
-    const spokenKey = `2kc-home-voice-${lang}`;
-    if (window.sessionStorage.getItem(spokenKey) === "1") return;
     const text = homeText[lang].welcome;
     const speak = () => {
       try {
-        if (window.sessionStorage.getItem(spokenKey) === "1") return;
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
         utterance.rate = 0.95;
-        utterance.onstart = () => window.sessionStorage.setItem(spokenKey, "1");
         window.speechSynthesis.speak(utterance);
       } catch {
         // Some browsers block autoplayed speech until the first user interaction.
       }
     };
 
-    const timer = window.setTimeout(speak, 120);
+    speak();
+    const timer = window.setTimeout(speak, 350);
     const onFirstInteraction = () => speak();
+    window.speechSynthesis.onvoiceschanged = speak;
     window.addEventListener("pointerdown", onFirstInteraction, { once: true, passive: true });
     return () => {
       window.clearTimeout(timer);
+      window.speechSynthesis.onvoiceschanged = null;
       window.removeEventListener("pointerdown", onFirstInteraction);
     };
   }, [lang, pathname]);

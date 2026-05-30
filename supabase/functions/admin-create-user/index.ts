@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 declare const Deno: any;
 
 type CreateUserBody = {
-  op?: "create_user" | "reset_password" | "delete_user";
+  op?: "create_user" | "list_users" | "update_user" | "reset_password" | "delete_user";
   user_id?: string;
   email?: string;
   role?: string;
@@ -82,6 +82,7 @@ async function smtp(
 async function sendPasswordEmail(params: { to: string; fullName: string; role: string; password: string }) {
   const resendKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const fromEmail = Deno.env.get("MAIL_FROM") ?? "Centre 2KC <onboarding@resend.dev>";
+  const errors: string[] = [];
 
   if (resendKey) {
     const subject = "Votre compte 2KC Centre de Sante";
@@ -115,12 +116,10 @@ async function sendPasswordEmail(params: { to: string; fullName: string; role: s
 
     const payload = await res.json().catch(() => null);
     if (!res.ok) {
-      return {
-        sent: false,
-        error: payload?.message ?? payload?.error ?? "Email non envoye par Resend.",
-      };
+      errors.push(`Resend: ${payload?.message ?? payload?.error ?? "Email non envoye par Resend."}`);
+    } else {
+      return { sent: true, error: null };
     }
-    return { sent: true, error: null };
   }
 
   const gmailUser = Deno.env.get("GMAIL_USER") ?? "";
@@ -128,7 +127,7 @@ async function sendPasswordEmail(params: { to: string; fullName: string; role: s
   if (!gmailUser || !gmailPassword) {
     return {
       sent: false,
-      error: "Secret RESEND_API_KEY manquant. Ajoutez aussi MAIL_FROM pour envoyer le mot de passe par email.",
+      error: errors.join(" | ") || "Secrets email manquants. Configurez RESEND_API_KEY/MAIL_FROM ou GMAIL_USER/GMAIL_APP_PASSWORD.",
     };
   }
 
@@ -176,7 +175,8 @@ async function sendPasswordEmail(params: { to: string; fullName: string; role: s
     await smtp(reader, writer, "QUIT", [221]);
     return { sent: true, error: null };
   } catch (e) {
-    return { sent: false, error: (e as any)?.message ?? "Email non envoye." };
+    errors.push(`Gmail: ${(e as any)?.message ?? "Email non envoye."}`);
+    return { sent: false, error: errors.join(" | ") };
   } finally {
     try { conn?.close?.(); } catch {}
   }
@@ -214,6 +214,40 @@ Deno.serve(async (req: Request) => {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
+    if (op === "list_users") {
+      const authUsers: any[] = [];
+      for (let page = 1; page <= 20; page++) {
+        const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 1000 });
+        if (error) return json(400, { error: error.message });
+        authUsers.push(...(data?.users ?? []));
+        if (!data?.users || data.users.length < 1000) break;
+      }
+
+      const { data: profiles, error: profilesError } = await (adminClient as any)
+        .schema("app")
+        .from("profiles")
+        .select("user_id, role, full_name, phone, created_at, updated_at");
+      if (profilesError) return json(400, { error: profilesError.message });
+
+      const byId = new Map((profiles ?? []).map((p: any) => [p.user_id, p]));
+      const users = authUsers
+        .map((u: any) => {
+          const profile = byId.get(u.id) as any;
+          return {
+            id: u.id,
+            email: u.email ?? "",
+            role: profile?.role ?? u.user_metadata?.role ?? "patient",
+            full_name: profile?.full_name ?? u.user_metadata?.full_name ?? (u.email ?? "").split("@")[0],
+            phone: profile?.phone ?? null,
+            created_at: u.created_at,
+            last_sign_in_at: u.last_sign_in_at ?? null,
+          };
+        })
+        .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)));
+
+      return json(200, { users });
+    }
+
     if (op === "reset_password") {
       const userId = (body.user_id ?? "").trim();
       if (!userId) return json(400, { error: "Missing user_id" });
@@ -226,6 +260,37 @@ Deno.serve(async (req: Request) => {
         ? await sendPasswordEmail({ to: email, fullName: prof.data?.full_name ?? email, role: prof.data?.role ?? "utilisateur", password })
         : { sent: false, error: "Email utilisateur introuvable." };
       return json(200, { password, emailSent: mail.sent, emailError: mail.error });
+    }
+
+    if (op === "update_user") {
+      const userId = (body.user_id ?? "").trim();
+      const email = (body.email ?? "").trim().toLowerCase();
+      const role = (body.role ?? "").trim();
+      const fullName = (body.full_name ?? "").trim();
+      if (!userId || !email || !role || !fullName) return json(400, { error: "Missing user_id/email/role/full_name" });
+
+      const { error: authErr } = await adminClient.auth.admin.updateUserById(userId, {
+        email,
+        email_confirm: true,
+        user_metadata: {
+          role,
+          full_name: fullName,
+          first_name: body.first_name ?? "",
+          last_name: body.last_name ?? "",
+          sex: body.sex ?? "",
+          birth_date: body.birth_date ?? "",
+          blood_type: body.blood_type ?? "",
+        },
+      });
+      if (authErr) return json(400, { error: authErr.message });
+
+      const { error: profileErr } = await (adminClient as any)
+        .schema("app")
+        .from("profiles")
+        .upsert({ user_id: userId, role, full_name: fullName }, { onConflict: "user_id" });
+      if (profileErr) return json(400, { error: profileErr.message });
+
+      return json(200, { ok: true });
     }
 
     if (op === "delete_user") {

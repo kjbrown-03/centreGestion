@@ -37,8 +37,8 @@ Deno.serve(async (req: Request) => {
     const model = (body.model ?? "gemini-2.5-flash").trim();
     const maxOutputTokens =
       typeof body.maxOutputTokens === "number" && body.maxOutputTokens > 0
-        ? Math.min(Math.round(body.maxOutputTokens), 1200)
-        : 420;
+        ? Math.min(Math.round(body.maxOutputTokens), 2000)
+        : 1200;
     if (!prompt) return json(400, { error: "Prompt manquant" });
 
     const res = await fetch(

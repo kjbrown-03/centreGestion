@@ -189,13 +189,18 @@ function PatientDashboard() {
       toast.error("Veuillez remplir tous les champs du formulaire.");
       return;
     }
+    const selectedDate = new Date(`${desiredDate}T${desiredTime}:00`);
+    if (selectedDate.getTime() < Date.now()) {
+      toast.error("La date du rendez-vous ne peut pas être antérieure à aujourd'hui.");
+      return;
+    }
     if (!patient?.id) {
       toast.error("Dossier patient indisponible. Contactez l'accueil pour activer votre espace.");
       return;
     }
     try {
       const supabase = await getSupabaseAsync();
-      const whenIso = new Date(`${desiredDate}T${desiredTime}:00`).toISOString();
+      const whenIso = selectedDate.toISOString();
       const authUser = (await supabase.auth.getUser()).data.user;
       const { error } = await (supabase as any)
         .schema("app")
@@ -262,6 +267,8 @@ function PatientDashboard() {
     const [sending, setSending] = useState<boolean>(false);
     const [messages, setMessages] = useState<any[]>([]);
     const [body, setBody] = useState<string>("");
+    const [practitioners, setPractitioners] = useState<Array<{ user_id: string; full_name: string }>>([]);
+    const [practitionerId, setPractitionerId] = useState<string>("");
 
     useEffect(() => {
       let alive = true;
@@ -270,14 +277,27 @@ function PatientDashboard() {
         setLoading(true);
         try {
           const supabase = await getSupabaseAsync();
-          const { data, error } = await (supabase as any)
-            .schema("app")
-            .from("messages")
-            .select("id, body, sender, created_at, practitioner:practitioner_id(full_name)")
-            .eq("patient_id", patient.id)
-            .order("created_at", { ascending: true });
-          if (error) throw error;
-          if (alive) setMessages(data ?? []);
+          const sb: any = supabase;
+          const [msg, doctors] = await Promise.all([
+            sb
+              .schema("app")
+              .from("messages")
+              .select("id, body, sender, created_at, practitioner_id, practitioner:practitioner_id(full_name)")
+              .eq("patient_id", patient.id)
+              .order("created_at", { ascending: true }),
+            sb
+              .schema("app")
+              .from("profiles")
+              .select("user_id, full_name")
+              .eq("role", "medecin")
+              .order("full_name", { ascending: true }),
+          ]);
+          if (msg.error) throw msg.error;
+          if (doctors.error) throw doctors.error;
+          if (alive) {
+            setMessages(msg.data ?? []);
+            setPractitioners(doctors.data ?? []);
+          }
         } catch (err: any) {
           toast.error(err?.message ?? "Impossible de charger la messagerie.");
         } finally {
@@ -299,13 +319,13 @@ function PatientDashboard() {
         const { error } = await (supabase as any)
           .schema("app")
           .from("messages")
-          .insert({ patient_id: patient.id, practitioner_id: null, sender: "patient", body: txt });
+          .insert({ patient_id: patient.id, practitioner_id: practitionerId || null, sender: "patient", body: txt });
         if (error) throw error;
         setBody("");
         const { data, error: rErr } = await (supabase as any)
           .schema("app")
           .from("messages")
-          .select("id, body, sender, created_at, practitioner:practitioner_id(full_name)")
+          .select("id, body, sender, created_at, practitioner_id, practitioner:practitioner_id(full_name)")
           .eq("patient_id", patient.id)
           .order("created_at", { ascending: true });
         if (!rErr) setMessages(data ?? []);
@@ -362,7 +382,20 @@ function PatientDashboard() {
           )}
         </div>
 
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex flex-col sm:flex-row gap-2">
+          <select
+            value={practitionerId}
+            onChange={(e) => setPractitionerId(e.target.value)}
+            className="w-full sm:w-44 rounded-2xl border bg-background px-3 py-3 text-sm outline-none"
+            aria-label="Choisir un médecin"
+          >
+            <option value="">Secrétariat</option>
+            {practitioners.map((doctor) => (
+              <option key={doctor.user_id} value={doctor.user_id}>
+                {doctor.full_name}
+              </option>
+            ))}
+          </select>
           <input
             value={body}
             onChange={(e) => setBody(e.target.value)}
@@ -463,6 +496,7 @@ function PatientDashboard() {
                       type="date"
                       value={desiredDate}
                       onChange={(e) => setDesiredDate(e.target.value)}
+                      min={new Date().toISOString().slice(0, 10)}
                       className="w-full rounded-xl border bg-card px-4 py-3 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
                       required
                     />
