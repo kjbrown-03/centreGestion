@@ -66,7 +66,11 @@ function AdminUsers() {
   async function invokeAdmin<T>(body: Record<string, unknown>) {
     const supabase = await getSupabaseAsync();
     const { data, error } = await supabase.functions.invoke<T>("admin-create-user", { body });
-    if (error) throw error;
+    if (error) {
+      const context = (error as any)?.context;
+      const payload = typeof context?.json === "function" ? await context.json().catch(() => null) : null;
+      throw new Error(payload?.error ?? error.message ?? "Erreur fonction Supabase.");
+    }
     return data;
   }
 

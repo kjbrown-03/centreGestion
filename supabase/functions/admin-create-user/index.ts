@@ -204,15 +204,21 @@ Deno.serve(async (req: Request) => {
     const caller = callerUserData.user;
     if (!caller?.id) return json(401, { error: "Not authenticated" });
 
-    const { data: profile, error: profileErr } = await callerClient.schema("app").from("profiles").select("role").eq("user_id", caller.id).maybeSingle();
-    if (profileErr) return json(403, { error: profileErr.message });
-    if (profile?.role !== "admin") return json(403, { error: "Admin only" });
-
     const body = (await req.json()) as CreateUserBody;
     const op = body.op ?? "create_user";
     const adminClient = createClient(url, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
+
+    const { data: profile, error: profileErr } = await (adminClient as any)
+      .schema("app")
+      .from("profiles")
+      .select("role")
+      .eq("user_id", caller.id)
+      .maybeSingle();
+    if (profileErr) return json(403, { error: profileErr.message });
+    const callerRole = profile?.role ?? caller.user_metadata?.role ?? "patient";
+    if (callerRole !== "admin") return json(403, { error: "Admin only" });
 
     if (op === "list_users") {
       const authUsers: any[] = [];
