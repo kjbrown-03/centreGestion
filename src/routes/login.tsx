@@ -128,6 +128,12 @@ function Login() {
       });
 
       if (!error) {
+        if (CREDENTIALS[cleanEmail]) {
+          const ensured = await supabase.functions.invoke("ensure-demo-account", {
+            body: { email: cleanEmail, password },
+          });
+          if (ensured.error) throw ensured.error;
+        }
         clearLoginFailures(cleanEmail);
         await hydrateProfileAndRedirect(cleanEmail, loginRole);
         return;
@@ -164,12 +170,17 @@ function Login() {
           return;
         }
 
+        const ensured = await supabase.functions.invoke("ensure-demo-account", {
+          body: { email: cleanEmail, password },
+        });
+        if (ensured.error) throw ensured.error;
+
+        const retry = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+        if (retry.error) throw retry.error;
+
         clearLoginFailures(cleanEmail);
-        login({ name: match.name, email: cleanEmail, role: match.role });
-        auditAdd({ actorEmail: cleanEmail, actorRole: match.role, action: "auth.login", target: cleanEmail, meta: { mode: "demo" } });
-        const roleObj = ROLES.find((r) => r.id === match.role)!;
+        await hydrateProfileAndRedirect(cleanEmail, loginRole);
         toast.success(`Ravi de vous revoir, ${match.name} !`);
-        navigate({ to: roleObj.route });
         return;
       }
 

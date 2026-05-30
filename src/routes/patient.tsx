@@ -37,6 +37,10 @@ export const Route = createFileRoute("/patient")({
   component: PatientDashboard,
 });
 
+const DEMO_PASSWORDS: Record<string, string> = {
+  "patient@2kc.fr": "patient123",
+};
+
 function PatientDashboard() {
   const [patient, setPatient] = useState<any | null>(null);
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -68,15 +72,31 @@ function PatientDashboard() {
         if (!user?.id) throw new Error("Session introuvable. Veuillez vous reconnecter.");
         setAuthEmail(user.email ?? null);
         const sb: any = supabase;
-        const { data: link, error: linkErr } = await sb
+        let { data: link, error: linkErr } = await sb
           .schema("app")
           .from("patient_accounts")
           .select(
             "patient_id, patient:patient_id (id, first_name, last_name, birth_date, blood_type, phone, allergies, chronic_conditions)",
           )
           .eq("user_id", user.id)
-          .single();
+          .maybeSingle();
+        if (!link?.patient_id && user.email && DEMO_PASSWORDS[user.email.toLowerCase()]) {
+          await supabase.functions.invoke("ensure-demo-account", {
+            body: { email: user.email.toLowerCase(), password: DEMO_PASSWORDS[user.email.toLowerCase()] },
+          });
+          const retry = await sb
+            .schema("app")
+            .from("patient_accounts")
+            .select(
+              "patient_id, patient:patient_id (id, first_name, last_name, birth_date, blood_type, phone, allergies, chronic_conditions)",
+            )
+            .eq("user_id", user.id)
+            .maybeSingle();
+          link = retry.data;
+          linkErr = retry.error;
+        }
         if (linkErr) throw linkErr;
+        if (!link?.patient_id) throw new Error("Votre espace patient est en cours de creation. Reconnectez-vous dans quelques secondes.");
         const pid = link.patient_id;
         if (alive) setPatient(link.patient);
         const [ap, pr, inv] = await Promise.all([
@@ -147,7 +167,7 @@ function PatientDashboard() {
       return;
     }
     if (!patient?.id) {
-      toast.error("Votre compte patient n'est pas lié. Contactez l'administration.");
+      toast.error("Votre espace patient est en cours de creation. Reconnectez-vous dans quelques secondes.");
       return;
     }
     try {

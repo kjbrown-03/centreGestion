@@ -899,6 +899,20 @@ values
   ('2KC00000004', 'Prudence', 'Etoa', 'F', '1999-09-09', '+237690000005', 'Bertoua')
 on conflict do nothing;
 
+insert into app.stock_items (kind, name, category, unit, stock, threshold, unit_price, expiry_date)
+values
+  ('pharmacy', 'Paracetamol 500mg', 'Antalgique', 'boite', 240, 50, 500, '2027-08-12'),
+  ('pharmacy', 'Amoxicilline 1g', 'Antibiotique', 'boite', 38, 40, 2500, '2027-03-04'),
+  ('pharmacy', 'Ibuprofene 400mg', 'Anti-inflammatoire', 'boite', 180, 60, 750, '2027-01-22'),
+  ('pharmacy', 'Doliprane sirop', 'Antalgique', 'flacon', 64, 30, 1800, '2027-05-30'),
+  ('pharmacy', 'Ventoline aerosol', 'Bronchodilatateur', 'unite', 22, 25, 3500, '2027-09-18'),
+  ('pharmacy', 'Insuline rapide', 'Endocrinologie', 'unite', 14, 20, 9000, '2027-02-10'),
+  ('pharmacy', 'Aspirine 100mg', 'Cardiologie', 'boite', 320, 80, 400, '2028-06-01'),
+  ('pharmacy', 'Omeprazole 20mg', 'Gastro', 'boite', 110, 40, 1600, '2027-11-15'),
+  ('pharmacy', 'Serum physiologique', 'Soins', 'unite', 540, 100, 300, '2028-01-01'),
+  ('pharmacy', 'Artemether/Lumefantrine', 'Antipaludique', 'boite', 90, 25, 2200, '2027-12-01')
+on conflict do nothing;
+
 -- ===================== COMPAT VIEW (FRONTEND) =====================
 -- Frontend expects `profiles` in public schema. This view preserves RLS by using security_invoker.
 

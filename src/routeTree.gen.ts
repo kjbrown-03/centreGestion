@@ -19,6 +19,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as ForbiddenRouteImport } from './routes/forbidden'
 import { Route as DirecteurRouteImport } from './routes/directeur'
 import { Route as ComptableRouteImport } from './routes/comptable'
+import { Route as CentreRouteImport } from './routes/centre'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminUtilisateursRouteImport } from './routes/admin/utilisateurs'
@@ -76,6 +77,11 @@ const ComptableRoute = ComptableRouteImport.update({
   path: '/comptable',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CentreRoute = CentreRouteImport.update({
+  id: '/centre',
+  path: '/centre',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -109,6 +115,7 @@ const AdminPatientsRoute = AdminPatientsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/centre': typeof CentreRoute
   '/comptable': typeof ComptableRoute
   '/directeur': typeof DirecteurRoute
   '/forbidden': typeof ForbiddenRoute
@@ -127,6 +134,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/centre': typeof CentreRoute
   '/comptable': typeof ComptableRoute
   '/directeur': typeof DirecteurRoute
   '/forbidden': typeof ForbiddenRoute
@@ -146,6 +154,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/centre': typeof CentreRoute
   '/comptable': typeof ComptableRoute
   '/directeur': typeof DirecteurRoute
   '/forbidden': typeof ForbiddenRoute
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/centre'
     | '/comptable'
     | '/directeur'
     | '/forbidden'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/centre'
     | '/comptable'
     | '/directeur'
     | '/forbidden'
@@ -202,6 +213,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/centre'
     | '/comptable'
     | '/directeur'
     | '/forbidden'
@@ -221,6 +233,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CentreRoute: typeof CentreRoute
   ComptableRoute: typeof ComptableRoute
   DirecteurRoute: typeof DirecteurRoute
   ForbiddenRoute: typeof ForbiddenRoute
@@ -310,6 +323,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComptableRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/centre': {
+      id: '/centre'
+      path: '/centre'
+      fullPath: '/centre'
+      preLoaderRoute: typeof CentreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -357,6 +377,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CentreRoute: CentreRoute,
   ComptableRoute: ComptableRoute,
   DirecteurRoute: DirecteurRoute,
   ForbiddenRoute: ForbiddenRoute,

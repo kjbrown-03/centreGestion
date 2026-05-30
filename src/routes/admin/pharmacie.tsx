@@ -1,19 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { AlertTriangle, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { type Medicine, useAuditLog } from "@/lib/store";
-import { Plus, Pencil, Trash2, Search, AlertTriangle, X } from "lucide-react";
 import { getSupabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin/pharmacie")({
   component: Pharmacie,
 });
 
-const CATEGORIES = ["Tous", "Antalgique", "Antibiotique", "Anti-inflammatoire", "Bronchodilatateur", "Endocrinologie", "Cardiologie", "Gastro", "Antihistaminique", "Soins", "Antiseptique", "Vitamines"];
+const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=400&q=80";
 
 const empty: Omit<Medicine, "id"> = {
-  name: "", category: "Antalgique", stock: 0, threshold: 0, price: 0, expiry: "", image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=400&q=80",
+  name: "",
+  category: "Pharmacie",
+  stock: 0,
+  threshold: 10,
+  price: 0,
+  expiry: "",
+  image: "",
 };
 
 function Pharmacie() {
@@ -22,120 +28,182 @@ function Pharmacie() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState("Tous");
   const [editing, setEditing] = useState<Medicine | null>(null);
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const supabase = getSupabase();
+      const { data, error: e } = await (supabase as any)
+        .schema("app")
+        .from("stock_items")
+        .select("id, name, category, stock, threshold, unit_price, expiry_date")
+        .eq("kind", "pharmacy")
+        .order("name", { ascending: true });
 
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const supabase = getSupabase();
-        const sb: any = supabase;
-        const { data, error: e } = await sb
-          .schema("app")
-          .from("stock_items")
-          .select("id, name, category, stock, threshold, unit_price, expiry_date")
-          .eq("kind", "pharmacy")
-          .order("name", { ascending: true });
-
-        if (e) throw e;
-        const mapped: Medicine[] = (data ?? []).map((r: any) => ({
-          id: r.id,
-          name: r.name,
-          category: r.category ?? "Autre",
-          stock: r.stock ?? 0,
-          threshold: r.threshold ?? 0,
-          price: Number(r.unit_price ?? 0),
-          expiry: r.expiry_date ?? "",
-          image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=400&q=80",
-        }));
-
-        if (alive) setMedicines(mapped);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Erreur lors du chargement du stock";
-        if (alive) setError(msg);
-      } finally {
-        if (alive) setLoading(false);
-      }
+      if (e) throw e;
+      const mapped: Medicine[] = (data ?? []).map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category ?? "Pharmacie",
+        stock: r.stock ?? 0,
+        threshold: r.threshold ?? 10,
+        price: Number(r.unit_price ?? 0),
+        expiry: r.expiry_date ?? "",
+        image: DEFAULT_IMAGE,
+      }));
+      setMedicines(mapped);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors du chargement du stock");
+    } finally {
+      setLoading(false);
     }
+  }
 
+  useEffect(() => {
     void load();
-    return () => {
-      alive = false;
-    };
   }, []);
 
   const filtered = useMemo(() => {
-    return medicines.filter((m) => {
-      const matchQ = m.name.toLowerCase().includes(q.toLowerCase());
-      const matchC = cat === "Tous" || m.category === cat;
-      return matchQ && matchC;
-    });
-  }, [medicines, q, cat]);
+    const needle = q.trim().toLowerCase();
+    if (!needle) return medicines;
+    return medicines.filter((m) => `${m.name} ${m.category}`.toLowerCase().includes(needle));
+  }, [medicines, q]);
 
-  function openCreate() { setEditing(null); setOpen(true); }
-  function openEdit(m: Medicine) { setEditing(m); setOpen(true); }
+  function openCreate() {
+    setEditing(null);
+    setOpen(true);
+  }
+
+  function openEdit(m: Medicine) {
+    setEditing(m);
+    setOpen(true);
+  }
 
   async function handleRemove(id: string) {
     setError(null);
     try {
       const supabase = getSupabase();
-      const sb: any = supabase;
       const before = medicines.find((x) => x.id === id) ?? null;
-      const { error: delErr } = await sb.schema("app").from("stock_items").delete().eq("id", id);
+      const { error: delErr } = await (supabase as any)
+        .schema("app")
+        .from("stock_items")
+        .delete()
+        .eq("id", id);
       if (delErr) throw delErr;
       setMedicines((s) => s.filter((x) => x.id !== id));
       auditAdd({ actorEmail: null, actorRole: null, action: "pharmacy.remove", target: id, meta: { before } });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Erreur";
-      setError(msg);
+      setError(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  async function saveMedicine(data: Omit<Medicine, "id">) {
+    setError(null);
+    try {
+      const supabase = getSupabase();
+      const { data: auth } = await supabase.auth.getUser();
+      const actorId = auth.user?.id ?? null;
+
+      if (editing) {
+        const before = editing;
+        const delta = data.stock - before.stock;
+        const { error: upErr } = await (supabase as any)
+          .schema("app")
+          .from("stock_items")
+          .update({
+            name: data.name,
+            category: data.category || "Pharmacie",
+            stock: data.stock,
+            threshold: before.threshold || 10,
+            unit_price: data.price,
+            expiry_date: data.expiry || null,
+          })
+          .eq("id", editing.id);
+
+        if (upErr) throw upErr;
+
+        if (actorId && delta !== 0) {
+          const { error: mvErr } = await (supabase as any).schema("app").from("stock_movements").insert({
+            item_id: editing.id,
+            moved_by: actorId,
+            delta,
+            reason: "adjust",
+          });
+          if (mvErr) throw mvErr;
+        }
+
+        setMedicines((s) => s.map((x) => (x.id === editing.id ? { ...x, ...data } : x)));
+        auditAdd({
+          actorEmail: null,
+          actorRole: null,
+          action: "pharmacy.update",
+          target: editing.id,
+          meta: { before, patch: data },
+        });
+      } else {
+        const { data: created, error: crErr } = await (supabase as any)
+          .schema("app")
+          .from("stock_items")
+          .insert({
+            kind: "pharmacy",
+            name: data.name,
+            category: data.category || "Pharmacie",
+            stock: data.stock,
+            threshold: 10,
+            unit_price: data.price,
+            expiry_date: data.expiry || null,
+          })
+          .select("id")
+          .single();
+        if (crErr) throw crErr;
+
+        const newMed: Medicine = { id: created.id, ...data, image: DEFAULT_IMAGE };
+        setMedicines((s) => [newMed, ...s]);
+        auditAdd({
+          actorEmail: null,
+          actorRole: null,
+          action: "pharmacy.add",
+          target: created.id,
+          meta: { name: newMed.name, category: newMed.category, stock: newMed.stock },
+        });
+      }
+
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
     }
   }
 
   return (
     <DashboardLayout allow="admin" title="Pharmacie">
-      {/* Toolbar */}
       <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
-        <div className="flex flex-1 gap-3 max-w-2xl">
-          <div className="relative flex-1">
-            <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Rechercher un médicament..."
-              className="pl-9 pr-4 py-2.5 rounded-xl border bg-card text-sm w-full outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
-            />
-          </div>
-          <select
-            value={cat}
-            onChange={(e) => setCat(e.target.value)}
-            className="rounded-xl border bg-card text-sm px-3 py-2.5 outline-none focus:border-[color:var(--mint)]"
-          >
-            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-          </select>
+        <div className="relative max-w-2xl flex-1">
+          <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Rechercher un medicament..."
+            className="pl-9 pr-4 py-2.5 rounded-xl border bg-card text-sm w-full outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
+          />
         </div>
         <button
           onClick={openCreate}
-          className="inline-flex items-center gap-2 rounded-xl gradient-mint text-[color:var(--navy)] font-semibold px-5 py-2.5 shadow-mint hover:brightness-110 transition"
+          className="inline-flex items-center justify-center gap-2 rounded-xl gradient-mint text-[color:var(--navy)] font-semibold px-5 py-2.5 shadow-mint hover:brightness-110 transition"
         >
-          <Plus className="size-4" /> Nouveau médicament
+          <Plus className="size-4" /> Nouveau medicament
         </button>
       </div>
 
-      {/* Grid */}
       {error && (
         <div className="mt-6 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {error}
         </div>
       )}
 
-      {loading && (
-        <p className="text-center text-muted-foreground mt-12">Chargement...</p>
-      )}
+      {loading ? <p className="text-center text-muted-foreground mt-12">Chargement...</p> : null}
 
       <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         <AnimatePresence mode="popLayout">
@@ -154,26 +222,28 @@ function Pharmacie() {
               >
                 <div className="relative aspect-[5/3] overflow-hidden bg-muted">
                   <img src={m.image} alt={m.name} className="size-full object-cover transition duration-500 group-hover:scale-110" />
-                  {low && (
+                  {low ? (
                     <span className="absolute top-3 left-3 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold rounded-full bg-amber-500 text-white px-2.5 py-1">
                       <AlertTriangle className="size-3" /> Stock bas
                     </span>
-                  )}
+                  ) : null}
                   <span className="absolute top-3 right-3 text-[10px] uppercase tracking-wider font-bold rounded-full glass px-2.5 py-1 text-[color:var(--navy)]">
                     {m.category}
                   </span>
                 </div>
                 <div className="p-4">
                   <p className="font-semibold text-[color:var(--navy)] truncate">{m.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Exp. {new Date(m.expiry).toLocaleDateString("fr-FR")}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Exp. {m.expiry ? new Date(m.expiry).toLocaleDateString("fr-FR") : "-"}
+                  </p>
                   <div className="mt-4 flex items-center justify-between">
                     <div>
                       <p className={`text-2xl font-bold ${low ? "text-amber-600" : "text-[color:var(--navy)]"}`}>{m.stock}</p>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">unités</p>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">unites</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-lg font-semibold text-[color:var(--navy)]">{m.price.toFixed(2)} €</p>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">unité</p>
+                      <p className="text-lg font-semibold text-[color:var(--navy)]">{m.price.toLocaleString("fr-FR")} FCFA</p>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">unite</p>
                     </div>
                   </div>
                   <div className="mt-4 flex gap-2">
@@ -181,7 +251,7 @@ function Pharmacie() {
                       onClick={() => openEdit(m)}
                       className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs rounded-lg border py-2 hover:bg-muted transition"
                     >
-                      <Pencil className="size-3.5" /> Éditer
+                      <Pencil className="size-3.5" /> Editer
                     </button>
                     <button
                       onClick={() => void handleRemove(m.id)}
@@ -197,128 +267,63 @@ function Pharmacie() {
         </AnimatePresence>
       </div>
 
-      {filtered.length === 0 && (
-        <p className="text-center text-muted-foreground mt-12">Aucun médicament trouvé.</p>
-      )}
+      {!loading && filtered.length === 0 ? (
+        <p className="text-center text-muted-foreground mt-12">Aucun medicament trouve.</p>
+      ) : null}
 
-      {/* Modal */}
       <AnimatePresence>
-        {open && (
+        {open ? (
           <MedicineForm
             initial={editing ?? empty}
+            medicines={medicines}
             onClose={() => setOpen(false)}
-            onSave={(data) => {
-              void (async () => {
-                setError(null);
-                try {
-                  const supabase = getSupabase();
-                  const sb: any = supabase;
-                  const { data: auth } = await supabase.auth.getUser();
-                  const actorId = auth.user?.id ?? null;
-
-                  if (editing) {
-                    const before = editing;
-                    const delta = data.stock - before.stock;
-
-                    const { error: upErr } = await sb
-                      .schema("app")
-                      .from("stock_items")
-                      .update({
-                        name: data.name,
-                        category: data.category,
-                        stock: data.stock,
-                        threshold: data.threshold,
-                        unit_price: data.price,
-                        expiry_date: data.expiry || null,
-                      })
-                      .eq("id", editing.id);
-
-                    if (upErr) throw upErr;
-
-                    if (actorId && delta !== 0) {
-                      const { error: mvErr } = await sb.schema("app").from("stock_movements").insert({
-                        item_id: editing.id,
-                        moved_by: actorId,
-                        delta,
-                        reason: "adjust",
-                      });
-                      if (mvErr) throw mvErr;
-                    }
-
-                    setMedicines((s) => s.map((x) => (x.id === editing.id ? { ...x, ...data } : x)));
-                    auditAdd({
-                      actorEmail: null,
-                      actorRole: null,
-                      action: "pharmacy.update",
-                      target: editing.id,
-                      meta: { before, patch: data },
-                    });
-                  } else {
-                    const { data: created, error: crErr } = await sb
-                      .schema("app")
-                      .from("stock_items")
-                      .insert({
-                        kind: "pharmacy",
-                        name: data.name,
-                        category: data.category,
-                        stock: data.stock,
-                        threshold: data.threshold,
-                        unit_price: data.price,
-                        expiry_date: data.expiry || null,
-                      })
-                      .select("id")
-                      .single();
-                    if (crErr) throw crErr;
-
-                    const newMed: Medicine = {
-                      id: created.id,
-                      ...data,
-                      image: data.image || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=400&q=80",
-                    };
-                    setMedicines((s) => [newMed, ...s]);
-                    auditAdd({
-                      actorEmail: null,
-                      actorRole: null,
-                      action: "pharmacy.add",
-                      target: created.id,
-                      meta: { name: newMed.name, category: newMed.category, stock: newMed.stock },
-                    });
-                  }
-                } catch (err) {
-                  const msg = err instanceof Error ? err.message : "Erreur";
-                  setError(msg);
-                  return;
-                }
-
-                setOpen(false);
-              })();
-            }}
+            onSave={(data) => void saveMedicine(data)}
           />
-        )}
+        ) : null}
       </AnimatePresence>
     </DashboardLayout>
   );
 }
 
 function MedicineForm({
-  initial, onClose, onSave,
+  initial, medicines, onClose, onSave,
 }: {
   initial: Omit<Medicine, "id"> | Medicine;
+  medicines: Medicine[];
   onClose: () => void;
   onSave: (m: Omit<Medicine, "id">) => void;
 }) {
-  const [form, setForm] = useState<Omit<Medicine, "id">>({
-    name: initial.name, category: initial.category, stock: initial.stock,
-    threshold: initial.threshold, price: initial.price, expiry: initial.expiry, image: initial.image,
+  const medicineOptions = useMemo(() => {
+    const seen = new Map<string, Medicine>();
+    for (const m of medicines) {
+      if (m.name && !seen.has(m.name)) seen.set(m.name, m);
+    }
+    if (initial.name && !seen.has(initial.name)) seen.set(initial.name, initial as Medicine);
+    return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [medicines, initial]);
+
+  const [form, setForm] = useState({
+    name: initial.name,
+    category: initial.category,
+    stock: "id" in initial ? String(initial.stock) : "",
+    price: "id" in initial ? String(initial.price) : "",
+    expiry: initial.expiry,
   });
 
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((f) => ({ ...f, [k]: v }));
   }
 
+  function chooseMedicine(name: string) {
+    const found = medicineOptions.find((m) => m.name === name);
+    setForm((f) => ({ ...f, name, category: found?.category ?? "Pharmacie" }));
+  }
+
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 bg-[color:var(--navy)]/60 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onClose}
     >
@@ -328,12 +333,23 @@ function MedicineForm({
         exit={{ scale: 0.96, opacity: 0 }}
         transition={{ type: "spring", stiffness: 240, damping: 22 }}
         onClick={(e) => e.stopPropagation()}
-        onSubmit={(e) => { e.preventDefault(); onSave(form); }}
-        className="w-full max-w-lg rounded-3xl bg-card border shadow-glow p-7"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave({
+            name: form.name,
+            category: form.category || "Pharmacie",
+            stock: Number(form.stock),
+            threshold: "id" in initial ? initial.threshold : 10,
+            price: Number(form.price),
+            expiry: form.expiry,
+            image: "id" in initial ? initial.image : DEFAULT_IMAGE,
+          });
+        }}
+        className="w-full max-w-lg rounded-3xl bg-card border shadow-glow p-5 sm:p-7"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h3 className="text-xl font-bold text-[color:var(--navy)]">
-            {"id" in initial ? "Modifier le médicament" : "Nouveau médicament"}
+            {"id" in initial ? "Modifier le medicament" : "Nouveau medicament"}
           </h3>
           <button type="button" onClick={onClose} className="size-9 rounded-xl border grid place-items-center hover:bg-muted">
             <X className="size-4" />
@@ -342,32 +358,28 @@ function MedicineForm({
 
         <div className="mt-6 space-y-4">
           <Field label="Nom">
-            <input required value={form.name} onChange={(e) => set("name", e.target.value)} className={inp} />
+            <select required value={form.name} onChange={(e) => chooseMedicine(e.target.value)} className={inp}>
+              <option value="" disabled>
+                Selectionner un medicament
+              </option>
+              {medicineOptions.map((m) => (
+                <option key={m.id} value={m.name}>
+                  {m.name} {m.category ? `- ${m.category}` : ""}
+                </option>
+              ))}
+            </select>
           </Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Catégorie">
-              <select value={form.category} onChange={(e) => set("category", e.target.value)} className={inp}>
-                {CATEGORIES.filter((c) => c !== "Tous").map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </Field>
+          <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Date d'expiration">
               <input type="date" required value={form.expiry} onChange={(e) => set("expiry", e.target.value)} className={inp} />
             </Field>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
             <Field label="Stock">
-              <input type="number" min={0} value={form.stock} onChange={(e) => set("stock", +e.target.value)} className={inp} />
+              <input type="number" min={0} placeholder="Quantite" value={form.stock} onChange={(e) => set("stock", e.target.value)} className={inp} required />
             </Field>
-            <Field label="Seuil bas">
-              <input type="number" min={0} value={form.threshold} onChange={(e) => set("threshold", +e.target.value)} className={inp} />
-            </Field>
-            <Field label="Prix (€)">
-              <input type="number" min={0} step={0.01} value={form.price} onChange={(e) => set("price", +e.target.value)} className={inp} />
+            <Field label="Prix (FCFA)">
+              <input type="number" min={0} step={1} placeholder="Prix unitaire" value={form.price} onChange={(e) => set("price", e.target.value)} className={inp} required />
             </Field>
           </div>
-          <Field label="URL image">
-            <input value={form.image} onChange={(e) => set("image", e.target.value)} className={inp} />
-          </Field>
         </div>
 
         <div className="mt-7 flex gap-3 justify-end">
