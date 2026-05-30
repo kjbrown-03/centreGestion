@@ -57,6 +57,12 @@ function Login() {
   const auditAdd = useAuditLog((s: { add: (e: any) => void }) => s.add);
   const navigate = useNavigate();
 
+  function fillDemo(emailValue: string, roleValue: Role) {
+    setEmail(emailValue);
+    setPassword(`${emailValue.split("@")[0]}123`);
+    setLoginRole(roleValue);
+  }
+
   async function hydrateProfileAndRedirect(cleanEmail: string, expectedRole?: Role) {
     const supabase = await getSupabaseAsync();
 
@@ -128,12 +134,6 @@ function Login() {
       });
 
       if (!error) {
-        if (CREDENTIALS[cleanEmail]) {
-          const ensured = await supabase.functions.invoke("ensure-demo-account", {
-            body: { email: cleanEmail, password },
-          });
-          if (ensured.error) throw ensured.error;
-        }
         clearLoginFailures(cleanEmail);
         await hydrateProfileAndRedirect(cleanEmail, loginRole);
         return;
@@ -173,13 +173,27 @@ function Login() {
         const ensured = await supabase.functions.invoke("ensure-demo-account", {
           body: { email: cleanEmail, password },
         });
-        if (ensured.error) throw ensured.error;
-
-        const retry = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
-        if (retry.error) throw retry.error;
+        if (!ensured.error) {
+          const retry = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+          if (!retry.error) {
+            clearLoginFailures(cleanEmail);
+            await hydrateProfileAndRedirect(cleanEmail, loginRole);
+            toast.success(`Ravi de vous revoir, ${match.name} !`);
+            return;
+          }
+        }
 
         clearLoginFailures(cleanEmail);
-        await hydrateProfileAndRedirect(cleanEmail, loginRole);
+        login({ name: match.name, email: cleanEmail, role: match.role });
+        auditAdd({
+          actorEmail: cleanEmail,
+          actorRole: match.role,
+          action: "auth.login",
+          target: cleanEmail,
+          meta: { mode: "demo-local" },
+        });
+        const roleObj = ROLES.find((r) => r.id === match.role);
+        navigate({ to: roleObj?.route ?? "/" });
         toast.success(`Ravi de vous revoir, ${match.name} !`);
         return;
       }
@@ -573,27 +587,42 @@ function Login() {
                 >
                   <p className="font-semibold text-[color:var(--navy)]">Comptes de démo inclus dans le code :</p>
                   <div className="grid sm:grid-cols-2 gap-3 font-mono text-[10px]">
-                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => { setEmail("patient@2kc.fr"); setPassword("patient123"); }}>
+                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => fillDemo("patient@2kc.fr", "patient")}>
                       <p className="font-bold text-[color:var(--navy)]">Patient (Pierre)</p>
                       <p className="mt-1 text-muted-foreground">patient@2kc.fr</p>
                       <p className="text-muted-foreground">Mdp : patient123</p>
                     </div>
-                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => { setEmail("medecin@2kc.fr"); setPassword("medecin123"); }}>
+                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => fillDemo("medecin@2kc.fr", "medecin")}>
                       <p className="font-bold text-[color:var(--navy)]">Médecin (Dr. Cissé)</p>
                       <p className="mt-1 text-muted-foreground">medecin@2kc.fr</p>
                       <p className="text-muted-foreground">Mdp : medecin123</p>
                     </div>
-                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => { setEmail("infirmier@2kc.fr"); setPassword("infirmier123"); }}>
+                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => fillDemo("infirmier@2kc.fr", "infirmier")}>
                       <p className="font-bold text-[color:var(--navy)]">Infirmier (Nadia)</p>
                       <p className="mt-1 text-muted-foreground">infirmier@2kc.fr</p>
                       <p className="text-muted-foreground">Mdp : infirmier123</p>
                     </div>
-                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => { setEmail("secretaire@2kc.fr"); setPassword("secretaire123"); }}>
+                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => fillDemo("secretaire@2kc.fr", "secretaire")}>
                       <p className="font-bold text-[color:var(--navy)]">Secrétaire</p>
                       <p className="mt-1 text-muted-foreground">secretaire@2kc.fr</p>
                       <p className="text-muted-foreground">Mdp : secretaire123</p>
                     </div>
-                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer sm:col-span-2" onClick={() => { setEmail("admin@2kc.fr"); setPassword("admin123"); }}>
+                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => fillDemo("pharmacien@2kc.fr", "pharmacien")}>
+                      <p className="font-bold text-[color:var(--navy)]">Pharmacien</p>
+                      <p className="mt-1 text-muted-foreground">pharmacien@2kc.fr</p>
+                      <p className="text-muted-foreground">Mdp : pharmacien123</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => fillDemo("comptable@2kc.fr", "comptable")}>
+                      <p className="font-bold text-[color:var(--navy)]">Comptable</p>
+                      <p className="mt-1 text-muted-foreground">comptable@2kc.fr</p>
+                      <p className="text-muted-foreground">Mdp : comptable123</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => fillDemo("directeur@2kc.fr", "directeur")}>
+                      <p className="font-bold text-[color:var(--navy)]">Directeur</p>
+                      <p className="mt-1 text-muted-foreground">directeur@2kc.fr</p>
+                      <p className="text-muted-foreground">Mdp : directeur123</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl border bg-card hover:border-[color:var(--mint)]/30 transition cursor-pointer" onClick={() => fillDemo("admin@2kc.fr", "admin")}>
                       <p className="font-bold text-[color:var(--navy)]">Administrateur</p>
                       <p className="mt-1 text-muted-foreground">admin@2kc.fr</p>
                       <p className="text-muted-foreground">Mdp : admin123</p>

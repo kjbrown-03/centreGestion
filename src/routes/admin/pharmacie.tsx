@@ -12,6 +12,21 @@ export const Route = createFileRoute("/admin/pharmacie")({
 
 const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=400&q=80";
 
+const MEDICINE_CATALOG: Array<Omit<Medicine, "id" | "image">> = [
+  { name: "Paracetamol 500mg", category: "Antalgique", stock: 100, threshold: 50, price: 500, expiry: "" },
+  { name: "Amoxicilline 1g", category: "Antibiotique", stock: 40, threshold: 40, price: 2500, expiry: "" },
+  { name: "Ibuprofene 400mg", category: "Anti-inflammatoire", stock: 80, threshold: 40, price: 750, expiry: "" },
+  { name: "Doliprane sirop", category: "Antalgique", stock: 50, threshold: 25, price: 1800, expiry: "" },
+  { name: "Ventoline aerosol", category: "Bronchodilatateur", stock: 25, threshold: 20, price: 3500, expiry: "" },
+  { name: "Insuline rapide", category: "Endocrinologie", stock: 20, threshold: 15, price: 9000, expiry: "" },
+  { name: "Aspirine 100mg", category: "Cardiologie", stock: 120, threshold: 50, price: 400, expiry: "" },
+  { name: "Omeprazole 20mg", category: "Gastro", stock: 70, threshold: 30, price: 1600, expiry: "" },
+  { name: "Serum physiologique", category: "Soins", stock: 200, threshold: 80, price: 300, expiry: "" },
+  { name: "Artemether/Lumefantrine", category: "Antipaludique", stock: 60, threshold: 25, price: 2200, expiry: "" },
+  { name: "Ceftriaxone 1g", category: "Antibiotique", stock: 30, threshold: 20, price: 3000, expiry: "" },
+  { name: "Metformine 500mg", category: "Diabetologie", stock: 90, threshold: 35, price: 600, expiry: "" },
+];
+
 const empty: Omit<Medicine, "id"> = {
   name: "",
   category: "Pharmacie",
@@ -294,11 +309,16 @@ function MedicineForm({
   onSave: (m: Omit<Medicine, "id">) => void;
 }) {
   const medicineOptions = useMemo(() => {
-    const seen = new Map<string, Medicine>();
+    const seen = new Map<string, Omit<Medicine, "image">>();
     for (const m of medicines) {
       if (m.name && !seen.has(m.name)) seen.set(m.name, m);
     }
-    if (initial.name && !seen.has(initial.name)) seen.set(initial.name, initial as Medicine);
+    for (const m of MEDICINE_CATALOG) {
+      if (m.name && !seen.has(m.name)) seen.set(m.name, { id: `catalog-${m.name}`, ...m });
+    }
+    if (initial.name && !seen.has(initial.name)) {
+      seen.set(initial.name, { ...(initial as Medicine), id: "id" in initial ? initial.id : `initial-${initial.name}` });
+    }
     return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [medicines, initial]);
 
@@ -316,7 +336,14 @@ function MedicineForm({
 
   function chooseMedicine(name: string) {
     const found = medicineOptions.find((m) => m.name === name);
-    setForm((f) => ({ ...f, name, category: found?.category ?? "Pharmacie" }));
+    setForm((f) => ({
+      ...f,
+      name,
+      category: found?.category ?? "Pharmacie",
+      stock: f.stock || String(found?.stock ?? ""),
+      price: f.price || String(found?.price ?? ""),
+      expiry: f.expiry || found?.expiry || "",
+    }));
   }
 
   return (

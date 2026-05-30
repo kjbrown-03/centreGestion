@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth, type Role } from "@/lib/store";
 import { roleLabel } from "@/lib/roles";
 import { getSupabaseAsync } from "@/lib/supabase";
+import { dashboardAssistant } from "@/lib/ai";
 import {
   Activity,
   Bell,
+  Bot,
   Calendar,
   ClipboardList,
   FileText,
@@ -14,8 +16,10 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageCircle,
   Pill,
   Search,
+  Send,
   Stethoscope,
   Users,
   X,
@@ -23,6 +27,7 @@ import {
 
 type NavItem = { to: string; label: string; icon: React.ComponentType<{ className?: string }> };
 type NotificationItem = { id: string; at: string; text: string };
+type ChatMessage = { id: string; role: "assistant" | "user"; text: string };
 
 const NAV: Record<Role, NavItem[]> = {
   admin: [
@@ -60,6 +65,10 @@ export function DashboardLayout({
   const [messages, setMessages] = useState<NotificationItem[]>([]);
   const [searchText, setSearchText] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
 
   const subtitle = useMemo(() => {
     if (!user?.role) return "Activite recente";
@@ -79,6 +88,51 @@ export function DashboardLayout({
     }
     if (user.role !== allow) navigate({ to: "/forbidden" });
   }, [user, allow, navigate]);
+
+  useEffect(() => {
+    if (!user) return;
+    setAiMessages([
+      {
+        id: "welcome",
+        role: "assistant",
+        text: proactiveIntro(user.role),
+      },
+    ]);
+  }, [user?.role, user?.email]);
+
+  async function sendAiMessage(message?: string) {
+    if (!user || aiLoading) return;
+    const text = (message ?? aiInput).trim();
+    if (!text) return;
+
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text };
+    setAiMessages((prev) => [...prev, userMessage]);
+    setAiInput("");
+    setAiLoading(true);
+    try {
+      const answer = await dashboardAssistant({
+        role: user.role,
+        userName: user.name,
+        message: text,
+        context: messages.map((m) => m.text).slice(0, 5),
+      });
+      setAiMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: "assistant", text: answer },
+      ]);
+    } catch (err: any) {
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: err?.message ?? "Assistant IA indisponible pour le moment.",
+        },
+      ]);
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   useEffect(() => {
     try {
@@ -371,8 +425,150 @@ export function DashboardLayout({
           </motion.div>
         </AnimatePresence>
       </main>
+
+      <button
+        type="button"
+        onClick={() => setAiOpen(true)}
+        className="fixed bottom-5 right-5 z-40 size-14 rounded-2xl gradient-mint text-[color:var(--navy)] shadow-mint grid place-items-center hover:brightness-110 transition"
+        aria-label="Ouvrir l'assistant IA"
+      >
+        <MessageCircle className="size-6" />
+      </button>
+
+      <AnimatePresence>
+        {aiOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-[color:var(--navy)]/35 backdrop-blur-sm flex items-end justify-end p-3 sm:p-5"
+            onClick={() => setAiOpen(false)}
+          >
+            <motion.section
+              initial={{ opacity: 0, y: 24, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.98 }}
+              transition={{ duration: 0.18 }}
+              className="w-full max-w-[440px] h-[min(720px,calc(100vh-2rem))] rounded-2xl border bg-card shadow-lg flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3 border-b flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="size-10 rounded-xl gradient-mint text-[color:var(--navy)] grid place-items-center shrink-0">
+                    <Bot className="size-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[color:var(--navy)] truncate">Assistant IA</p>
+                    <p className="text-xs text-muted-foreground truncate">{roleLabel(user.role)}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAiOpen(false)}
+                  className="size-9 rounded-xl border grid place-items-center hover:bg-muted"
+                  aria-label="Fermer l'assistant IA"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto p-4 space-y-3">
+                {aiMessages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap ${
+                      m.role === "user"
+                        ? "ml-auto bg-[color:var(--navy)] text-white"
+                        : "bg-muted text-foreground"
+                    }`}
+                  >
+                    {m.text}
+                  </div>
+                ))}
+                {aiLoading ? (
+                  <div className="max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm bg-muted text-muted-foreground">
+                    Analyse en cours...
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="border-t p-3">
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {quickPromptsForRole(user.role).map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => void sendAiMessage(prompt)}
+                      className="rounded-xl border px-3 py-1.5 text-xs hover:bg-muted"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void sendAiMessage();
+                  }}
+                  className="flex gap-2"
+                >
+                  <input
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    placeholder="Ecrire à l'assistant..."
+                    className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20"
+                  />
+                  <button
+                    type="submit"
+                    disabled={aiLoading || !aiInput.trim()}
+                    className="size-10 rounded-xl gradient-mint text-[color:var(--navy)] grid place-items-center disabled:opacity-60"
+                    aria-label="Envoyer"
+                  >
+                    <Send className="size-4" />
+                  </button>
+                </form>
+              </div>
+            </motion.section>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
+}
+
+function proactiveIntro(role: Role) {
+  switch (role) {
+    case "medecin":
+      return "Je peux surveiller vos rendez-vous, repérer les résultats préoccupants et proposer des pistes de prise en charge selon les symptômes.";
+    case "infirmier":
+      return "Je peux prioriser les soins, rappeler les médicaments à administrer et signaler les patients à risque.";
+    case "pharmacien":
+      return "Je peux détecter les stocks faibles, proposer les commandes et aider à préparer les délivrances.";
+    case "comptable":
+      return "Je peux signaler les retards de paiement et générer un résumé financier rapide.";
+    case "patient":
+      return "Je peux vous rappeler vos consultations, vos médicaments et donner des conseils de santé simples.";
+    case "secretaire":
+      return "Je peux organiser les rendez-vous, repérer les demandes urgentes et préparer les relances.";
+    case "directeur":
+      return "Je peux résumer les indicateurs, les alertes et les priorités du centre.";
+    default:
+      return "Je peux vous aider à piloter les tâches importantes du centre.";
+  }
+}
+
+function quickPromptsForRole(role: Role) {
+  const prompts: Record<Role, string[]> = {
+    admin: ["Résumé des alertes", "Aide création compte"],
+    medecin: ["RDV importants", "Symptômes à analyser"],
+    infirmier: ["Soins prioritaires", "Patients à risque"],
+    secretaire: ["Prioriser les RDV", "Relances patients"],
+    comptable: ["Paiements en retard", "Rapport financier"],
+    pharmacien: ["Stocks faibles", "Commande recommandée"],
+    directeur: ["Priorités du jour", "Analyse KPI"],
+    patient: ["Mes rappels", "Conseils santé"],
+  };
+  return prompts[role] ?? ["Aide-moi"];
 }
 
 export function StatCard({

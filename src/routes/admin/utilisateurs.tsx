@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Save, Search, Trash2, KeyRound } from "lucide-react";
+import { Mail, Plus, UserRound } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { ROLES } from "@/lib/roles";
@@ -12,211 +12,122 @@ export const Route = createFileRoute("/admin/utilisateurs")({
 
 type RoleId = (typeof ROLES)[number]["id"];
 
-type ProfileRow = {
-  user_id: string;
-  full_name: string;
-  role: RoleId;
+type CreateUserResponse = {
+  user: { id: string | null; email: string | null };
+  password: string;
+  emailSent?: boolean;
+  emailError?: string | null;
 };
 
 function AdminUsers() {
-  const [rows, setRows] = useState<ProfileRow[]>([]);
-  const [loadingRows, setLoadingRows] = useState(true);
-  const [q, setQ] = useState("");
-  const [roleFilter, setRoleFilter] = useState<RoleId | "">("");
-  const [savingId, setSavingId] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [role, setRole] = useState<RoleId>("medecin");
 
-  const roleById = useMemo(
-    () => Object.fromEntries(ROLES.map((r) => [r.id, r.label])) as Record<RoleId, string>,
-    [],
-  );
+  async function createUser(e: React.FormEvent) {
+    e.preventDefault();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = fullName.trim();
+    if (!cleanEmail || !cleanName) return;
 
-  async function loadUsers() {
-    setLoadingRows(true);
-    try {
-      const supabase = await getSupabaseAsync();
-      const sb: any = supabase;
-      let query = sb
-        .schema("app")
-        .from("profiles")
-        .select("user_id, full_name, role")
-        .order("full_name", { ascending: true });
-
-      const needle = q.trim();
-      if (needle) query = query.ilike("full_name", `%${needle}%`);
-      if (roleFilter) query = query.eq("role", roleFilter);
-
-      const { data, error } = await query;
-      if (error) throw error;
-      setRows((data ?? []) as ProfileRow[]);
-    } catch (err: any) {
-      toast.error(err?.message ?? "Chargement des utilisateurs impossible.");
-    } finally {
-      setLoadingRows(false);
-    }
-  }
-
-  useEffect(() => {
-    const id = window.setTimeout(() => void loadUsers(), 250);
-    return () => window.clearTimeout(id);
-  }, [q, roleFilter]);
-
-  async function saveRow(row: ProfileRow) {
-    setSavingId(row.user_id);
-    try {
-      const supabase = await getSupabaseAsync();
-      const { error } = await (supabase as any)
-        .schema("app")
-        .from("profiles")
-        .update({ full_name: row.full_name.trim(), role: row.role })
-        .eq("user_id", row.user_id);
-      if (error) throw error;
-      toast.success("Utilisateur modifie.");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Sauvegarde impossible.");
-    } finally {
-      setSavingId(null);
-    }
-  }
-
-  async function resetPassword(userId: string) {
+    setCreating(true);
     setActionMsg(null);
     try {
       const supabase = await getSupabaseAsync();
-      const { data, error } = await supabase.functions.invoke("admin-manage-user", {
-        body: { op: "reset_password", user_id: userId },
+      const { data, error } = await supabase.functions.invoke<CreateUserResponse>("admin-create-user", {
+        body: {
+          op: "create_user",
+          email: cleanEmail,
+          role,
+          full_name: cleanName,
+        },
       });
       if (error) throw error;
-      const pwd = (data as any)?.password as string | undefined;
-      if (!pwd) throw new Error("Reponse invalide.");
-      setActionMsg(`Nouveau mot de passe: ${pwd}`);
-      toast.success("Mot de passe reinitialise.");
-    } catch (err: any) {
-      toast.error(err?.message ?? "Reinitialisation impossible.");
-    }
-  }
+      if (!data?.password) throw new Error("Reponse invalide.");
 
-  async function deleteUser(userId: string) {
-    if (!confirm("Supprimer cet utilisateur ?")) return;
-    try {
-      const supabase = await getSupabaseAsync();
-      const { error } = await supabase.functions.invoke("admin-manage-user", {
-        body: { op: "delete_user", user_id: userId },
-      });
-      if (error) throw error;
-      setRows((prev) => prev.filter((row) => row.user_id !== userId));
-      toast.success("Utilisateur supprime.");
+      if (data.emailSent) {
+        toast.success("Utilisateur créé. Mot de passe envoyé par email.");
+        setActionMsg(`Compte créé pour ${cleanEmail}. Le mot de passe a été envoyé par email.`);
+      } else {
+        toast.warning(data.emailError ?? "Utilisateur créé, mais l'email n'a pas été envoyé.");
+        setActionMsg(`Mot de passe pour ${cleanEmail}: ${data.password}`);
+      }
+
+      setEmail("");
+      setFullName("");
+      setRole("medecin");
     } catch (err: any) {
-      toast.error(err?.message ?? "Suppression impossible.");
+      const message = String(err?.message ?? "Création impossible.");
+      toast.error(
+        message.includes("Failed to send a request")
+          ? "Edge Function admin-create-user indisponible. Déployez-la dans Supabase puis réessayez."
+          : message,
+      );
+    } finally {
+      setCreating(false);
     }
   }
 
   return (
     <DashboardLayout allow="admin" title="Utilisateurs">
-      <div className="rounded-2xl sm:rounded-3xl border bg-card p-4 sm:p-7">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mx-auto max-w-2xl rounded-2xl sm:rounded-3xl border bg-card p-4 sm:p-7">
+        <div className="flex items-start gap-3">
+          <span className="size-11 rounded-2xl gradient-mint text-[color:var(--navy)] grid place-items-center shrink-0">
+            <UserRound className="size-5" />
+          </span>
           <div>
-            <h3 className="text-xl font-bold text-[color:var(--navy)]">Utilisateurs et roles</h3>
+            <h3 className="text-xl font-bold text-[color:var(--navy)]">Créer un utilisateur</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Modifiez le nom, changez le role, reinitialisez un mot de passe ou supprimez un compte.
+              Le mot de passe est généré automatiquement puis envoyé à l'adresse email renseignée.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px] lg:w-[560px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Rechercher par nom..."
-                className={inputClass + " pl-9"}
-              />
-            </div>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as RoleId | "")}
+        </div>
+
+        <form onSubmit={createUser} className="mt-6 space-y-4">
+          <Field label="Nom complet">
+            <input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Ex: Dr Karim Cisse"
               className={inputClass}
-            >
-              <option value="">Tous les roles</option>
+              required
+            />
+          </Field>
+          <Field label="Email">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="nom@domaine.com"
+              className={inputClass}
+              required
+            />
+          </Field>
+          <Field label="Rôle">
+            <select value={role} onChange={(e) => setRole(e.target.value as RoleId)} className={inputClass}>
               {ROLES.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.label}
                 </option>
               ))}
             </select>
-          </div>
-        </div>
+          </Field>
 
-        {actionMsg ? (
-          <div className="mt-5 rounded-2xl border bg-muted/30 p-4 text-sm break-all">
-            {actionMsg}
-          </div>
-        ) : null}
-
-        <div className="mt-6 space-y-3">
-          {loadingRows ? <div className="text-sm text-muted-foreground">Chargement...</div> : null}
-          {!loadingRows && rows.length === 0 ? (
-            <div className="rounded-2xl border bg-muted/30 p-4 text-sm text-muted-foreground">
-              Aucun utilisateur.
-            </div>
+          {actionMsg ? (
+            <div className="rounded-2xl border bg-muted/30 p-4 text-sm break-all">{actionMsg}</div>
           ) : null}
 
-          {rows.map((row) => (
-            <div key={row.user_id} className="rounded-2xl border bg-muted/20 p-3 sm:p-4">
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto] lg:items-center">
-                <div>
-                  <input
-                    value={row.full_name}
-                    onChange={(e) =>
-                      setRows((prev) =>
-                        prev.map((x) =>
-                          x.user_id === row.user_id ? { ...x, full_name: e.target.value } : x,
-                        ),
-                      )
-                    }
-                    className={inputClass}
-                  />
-                  <p className="mt-1 truncate text-[11px] text-muted-foreground">{row.user_id}</p>
-                </div>
-                <select
-                  value={row.role}
-                  onChange={(e) =>
-                    setRows((prev) =>
-                      prev.map((x) =>
-                        x.user_id === row.user_id ? { ...x, role: e.target.value as RoleId } : x,
-                      ),
-                    )
-                  }
-                  className={inputClass}
-                  aria-label={`Role de ${row.full_name}`}
-                >
-                  {ROLES.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-                <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <ActionButton disabled={savingId === row.user_id} onClick={() => void saveRow(row)}>
-                    <Save className="size-3.5" /> Enregistrer
-                  </ActionButton>
-                  <ActionButton onClick={() => void resetPassword(row.user_id)}>
-                    <KeyRound className="size-3.5" /> MDP
-                  </ActionButton>
-                  <button
-                    type="button"
-                    onClick={() => void deleteUser(row.user_id)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 px-3 py-2 text-xs text-red-600 hover:bg-red-50"
-                  >
-                    <Trash2 className="size-3.5" /> Supprimer
-                  </button>
-                </div>
-              </div>
-              <div className="mt-2 text-xs text-muted-foreground">
-                Role actuel: <span className="font-medium text-[color:var(--navy)]">{roleById[row.role]}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+          <button
+            type="submit"
+            disabled={creating}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl gradient-mint text-[color:var(--navy)] font-semibold py-4 shadow-mint hover:brightness-110 transition disabled:opacity-60"
+          >
+            {creating ? <Mail className="size-4 animate-pulse" /> : <Plus className="size-4" />}
+            {creating ? "Création et envoi..." : "Créer et envoyer"}
+          </button>
+        </form>
       </div>
     </DashboardLayout>
   );
@@ -225,23 +136,11 @@ function AdminUsers() {
 const inputClass =
   "w-full rounded-2xl border bg-background px-4 py-3 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition";
 
-function ActionButton({
-  children,
-  disabled,
-  onClick,
-}: {
-  children: React.ReactNode;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
-    >
+    <label className="block space-y-1.5">
+      <span className="text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)]">{label}</span>
       {children}
-    </button>
+    </label>
   );
 }

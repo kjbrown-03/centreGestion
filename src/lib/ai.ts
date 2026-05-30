@@ -40,6 +40,46 @@ async function generateAiText(prompt: string): Promise<string> {
   return String(text).trim();
 }
 
+export async function dashboardAssistant(params: {
+  role: string;
+  userName?: string;
+  message: string;
+  context?: string[];
+}): Promise<string> {
+  const roleGuidance: Record<string, string> = {
+    medecin:
+      "Pour les médecins: rappeler les rendez-vous importants, détecter les résultats anormaux, proposer des pistes de traitement selon les symptômes sans remplacer le jugement clinique.",
+    infirmier:
+      "Pour les infirmières: alerter quand un patient doit recevoir un médicament, prioriser les soins, signaler les patients en danger.",
+    pharmacien:
+      "Pour le pharmacien: prévenir quand le stock est faible, recommander les commandes de médicaments et les priorités de délivrance.",
+    comptable:
+      "Pour le comptable: signaler les paiements en retard, résumer les encaissements et générer des rapports financiers courts.",
+    patient:
+      "Pour les patients: rappeler les consultations, les prises de médicaments et donner des conseils de santé généraux.",
+    secretaire:
+      "Pour le secrétariat: prioriser les rendez-vous, repérer les demandes urgentes et proposer les relances utiles.",
+    directeur:
+      "Pour la direction: repérer les alertes opérationnelles, les tendances et les priorités du centre.",
+    admin:
+      "Pour l'administration: aider au pilotage, à la création des comptes et au suivi des alertes du centre.",
+  };
+
+  const prompt = [
+    "Tu es l'assistant IA proactif du Centre de Santé 2KC.",
+    `Utilisateur: ${params.userName ?? "Utilisateur"}`,
+    `Rôle: ${params.role}`,
+    roleGuidance[params.role] ?? "Aide l'utilisateur avec des réponses concrètes et courtes.",
+    "Réponds en français, avec des actions concrètes. Si la demande est médicale, précise que le médecin décide.",
+    params.context?.length ? `Contexte récent:\n- ${params.context.join("\n- ")}` : null,
+    `Message utilisateur: ${params.message}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return generateAiText(prompt);
+}
+
 export async function suggestTreatment(params: {
   chiefComplaint?: string;
   symptoms?: string;
