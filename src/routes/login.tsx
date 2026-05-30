@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { ROLES } from "@/lib/roles";
 import { useAuth, useAuditLog, type Role } from "@/lib/store";
+import { downloadCredentialsTxt } from "@/lib/credentials-file";
 
 export const Route = createFileRoute("/login")({
   component: Login,
@@ -234,12 +235,20 @@ function Login() {
       });
 
       if (error) throw error;
+      downloadCredentialsTxt({
+        email: cleanEmail,
+        password: regPassword,
+        role: regRole,
+        fullName: regName.trim(),
+        source: "inscription_patient",
+      });
+
       if (!data.session) {
-        toast.success("Compte créé. Vérifiez votre e-mail, puis connectez-vous.");
+        toast.success("Compte créé. Le fichier d'identifiants a été téléchargé.");
         return;
       }
 
-      toast.success("Compte créé. Connexion en cours...");
+      toast.success("Compte créé. Fichier d'identifiants téléchargé. Connexion en cours...");
       await hydrateProfileAndRedirect(cleanEmail, regRole);
     } catch (err: any) {
       toast.error(err?.message ?? "Inscription impossible.");

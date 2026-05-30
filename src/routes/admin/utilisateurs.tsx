@@ -5,6 +5,7 @@ import { Mail, Plus, UserRound } from "lucide-react";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { ROLES } from "@/lib/roles";
+import { downloadCredentialsTxt } from "@/lib/credentials-file";
 
 export const Route = createFileRoute("/admin/utilisateurs")({
   component: AdminUsers,
@@ -47,12 +48,20 @@ function AdminUsers() {
       if (error) throw error;
       if (!data?.password) throw new Error("Reponse invalide.");
 
+      downloadCredentialsTxt({
+        email: cleanEmail,
+        password: data.password,
+        role,
+        fullName: cleanName,
+        source: "admin_creation",
+      });
+
       if (data.emailSent) {
-        toast.success("Utilisateur créé. Mot de passe envoyé par email.");
-        setActionMsg(`Compte créé pour ${cleanEmail}. Le mot de passe a été envoyé par email.`);
+        toast.success("Utilisateur créé. Email envoyé et fichier d'identifiants téléchargé.");
+        setActionMsg(`Compte créé pour ${cleanEmail}. Le mot de passe a été envoyé par email et téléchargé en fichier txt.`);
       } else {
         toast.warning(data.emailError ?? "Utilisateur créé, mais l'email n'a pas été envoyé.");
-        setActionMsg(`Mot de passe pour ${cleanEmail}: ${data.password}`);
+        setActionMsg(`Mot de passe pour ${cleanEmail}: ${data.password}. Un fichier txt a aussi été téléchargé.`);
       }
 
       setEmail("");
