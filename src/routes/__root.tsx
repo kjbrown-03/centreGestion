@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -126,31 +127,39 @@ function RootComponent() {
   const auditAdd = useAuditLog((s: { add: (e: any) => void }) => s.add);
   const lang = useI18n((s) => s.lang);
   const router = useRouter();
+  const pathname = useRouterState({ select: (s: any) => s.location.pathname });
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (pathname !== "/") {
+      window.speechSynthesis.cancel();
+      return;
+    }
+    const spokenKey = `2kc-home-voice-${lang}`;
+    if (window.sessionStorage.getItem(spokenKey) === "1") return;
     const text = homeText[lang].welcome;
     const speak = () => {
       try {
+        if (window.sessionStorage.getItem(spokenKey) === "1") return;
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
         utterance.rate = 0.95;
+        utterance.onstart = () => window.sessionStorage.setItem(spokenKey, "1");
         window.speechSynthesis.speak(utterance);
       } catch {
         // Some browsers block autoplayed speech until the first user interaction.
       }
     };
 
-    speak();
-    const timer = window.setTimeout(speak, 80);
+    const timer = window.setTimeout(speak, 120);
     const onFirstInteraction = () => speak();
     window.addEventListener("pointerdown", onFirstInteraction, { once: true, passive: true });
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener("pointerdown", onFirstInteraction);
     };
-  }, [lang]);
+  }, [lang, pathname]);
 
   useEffect(() => {
     const unsub = router.subscribe("onResolved", () => {

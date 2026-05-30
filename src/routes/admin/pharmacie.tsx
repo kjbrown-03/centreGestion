@@ -1,4 +1,4 @@
-﻿import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, Pencil, Plus, Search, Trash2, X } from "lucide-react";
@@ -46,7 +46,7 @@ function catalogAsMedicines(): Medicine[] {
 }
 
 function isPersistedId(id?: string) {
-  return !!id && !id.startsWith("catalog-") && !id.startsWith("local-");
+  return !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }
 
 function errorMessage(err: unknown, fallback: string) {
@@ -66,6 +66,7 @@ function Pharmacie() {
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<Medicine | null>(null);
   const [open, setOpen] = useState(false);
+  const locationSearch = useRouterState({ select: (s: any) => s.location.search });
 
   async function load() {
     setLoading(true);
@@ -102,6 +103,11 @@ function Pharmacie() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(locationSearch ?? "");
+    setQ(params.get("q") ?? "");
+  }, [locationSearch]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -148,14 +154,9 @@ function Pharmacie() {
       const { data: auth } = await supabase.auth.getUser();
       const actorId = auth.user?.id ?? null;
 
-      if (editing) {
+      if (editing && isPersistedId(editing.id)) {
         const before = editing;
         const delta = data.stock - before.stock;
-        if (!isPersistedId(editing.id)) {
-          setMedicines((s) => s.map((x) => (x.id === editing.id ? { ...x, ...data } : x)));
-          setOpen(false);
-          return;
-        }
         const { error: upErr } = await (supabase as any)
           .schema("app")
           .from("stock_items")
@@ -207,7 +208,9 @@ function Pharmacie() {
         if (crErr) throw crErr;
 
         const newMed: Medicine = { id: created.id, ...data, image: DEFAULT_IMAGE };
-        setMedicines((s) => [newMed, ...s]);
+        setMedicines((s) =>
+          editing ? s.map((x) => (x.id === editing.id ? newMed : x)) : [newMed, ...s],
+        );
         auditAdd({
           actorEmail: null,
           actorRole: null,
@@ -229,7 +232,7 @@ function Pharmacie() {
       );
       setOpen(false);
       setError(
-        `${errorMessage(err, "Enregistrement Supabase impossible.")} Le medicament reste affiche localement. Reconnectez-vous avec une session admin Supabase pour le persister.`,
+        `${errorMessage(err, "Enregistrement Supabase impossible.")} Le médicament reste affiché localement. Reconnectez-vous avec une session admin Supabase pour le persister.`,
       );
     }
   }
@@ -242,7 +245,7 @@ function Pharmacie() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Rechercher un medicament..."
+            placeholder="Rechercher un médicament..."
             className="pl-9 pr-4 py-2.5 rounded-xl border bg-card text-sm w-full outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
           />
         </div>
@@ -250,7 +253,7 @@ function Pharmacie() {
           onClick={openCreate}
           className="inline-flex items-center justify-center gap-2 rounded-xl gradient-mint text-[color:var(--navy)] font-semibold px-5 py-2.5 shadow-mint hover:brightness-110 transition"
         >
-          <Plus className="size-4" /> Nouveau medicament
+          <Plus className="size-4" /> Nouveau médicament
         </button>
       </div>
 
@@ -296,11 +299,11 @@ function Pharmacie() {
                   <div className="mt-4 flex items-center justify-between">
                     <div>
                       <p className={`text-2xl font-bold ${low ? "text-amber-600" : "text-[color:var(--navy)]"}`}>{m.stock}</p>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">unites</p>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">unités</p>
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-semibold text-[color:var(--navy)]">{m.price.toLocaleString("fr-FR")} FCFA</p>
-                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">unite</p>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">unité</p>
                     </div>
                   </div>
                   <div className="mt-4 flex gap-2">
@@ -308,7 +311,7 @@ function Pharmacie() {
                       onClick={() => openEdit(m)}
                       className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs rounded-lg border py-2 hover:bg-muted transition"
                     >
-                      <Pencil className="size-3.5" /> Editer
+                      <Pencil className="size-3.5" /> Éditer
                     </button>
                     <button
                       onClick={() => void handleRemove(m.id)}
@@ -325,7 +328,7 @@ function Pharmacie() {
       </div>
 
       {!loading && filtered.length === 0 ? (
-        <p className="text-center text-muted-foreground mt-12">Aucun medicament trouve.</p>
+        <p className="text-center text-muted-foreground mt-12">Aucun médicament trouvé.</p>
       ) : null}
 
       <AnimatePresence>
@@ -418,7 +421,7 @@ function MedicineForm({
       >
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-xl font-bold text-[color:var(--navy)]">
-            {"id" in initial ? "Modifier le medicament" : "Nouveau medicament"}
+            {"id" in initial ? "Modifier le médicament" : "Nouveau médicament"}
           </h3>
           <button type="button" onClick={onClose} className="size-9 rounded-xl border grid place-items-center hover:bg-muted">
             <X className="size-4" />
@@ -429,7 +432,7 @@ function MedicineForm({
           <Field label="Nom">
             <select required value={form.name} onChange={(e) => chooseMedicine(e.target.value)} className={inp}>
               <option value="" disabled>
-                Selectionner un medicament
+                Sélectionner un médicament
               </option>
               {medicineOptions.map((m) => (
                 <option key={m.id} value={m.name}>
@@ -443,7 +446,7 @@ function MedicineForm({
               <input type="date" required value={form.expiry} onChange={(e) => set("expiry", e.target.value)} className={inp} />
             </Field>
             <Field label="Stock">
-              <input type="number" min={0} placeholder="Quantite" value={form.stock} onChange={(e) => set("stock", e.target.value)} className={inp} required />
+              <input type="number" min={0} placeholder="Quantité" value={form.stock} onChange={(e) => set("stock", e.target.value)} className={inp} required />
             </Field>
             <Field label="Prix (FCFA)">
               <input type="number" min={0} step={1} placeholder="Prix unitaire" value={form.price} onChange={(e) => set("price", e.target.value)} className={inp} required />
@@ -472,3 +475,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
+

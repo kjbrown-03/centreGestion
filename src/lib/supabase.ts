@@ -73,8 +73,8 @@ export async function getSupabaseAsync() {
 
   _client = createClient(url, anon, {
     auth: {
-      persistSession: false,
-      autoRefreshToken: false,
+      persistSession: true,
+      autoRefreshToken: true,
       detectSessionInUrl: false,
     },
   });
@@ -109,8 +109,8 @@ export function getSupabase() {
 
   _client = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      persistSession: false,
-      autoRefreshToken: false,
+      persistSession: true,
+      autoRefreshToken: true,
       detectSessionInUrl: false,
     },
   });

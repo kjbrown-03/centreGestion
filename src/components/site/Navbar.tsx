@@ -39,7 +39,7 @@ export function Navbar() {
               <Activity className="size-5" strokeWidth={2.5} />
             </span>
             <span className="truncate">2KC</span>
-            <span className="text-white/60 font-normal text-sm hidden lg:inline">- Centre de Sante</span>
+            <span className="text-white/60 font-normal text-sm hidden lg:inline">- Centre de Santé</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-5 lg:gap-7 text-sm text-white/80">

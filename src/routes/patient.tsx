@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { patientReminders } from "@/lib/ai";
 import { whatsappUrlFor } from "@/lib/contact";
+import { useAuth } from "@/lib/store";
 import {
   User,
   Calendar,
@@ -43,6 +44,7 @@ const DEMO_PASSWORDS: Record<string, string> = {
 };
 
 function PatientDashboard() {
+  const appUser = useAuth((s: { user: any }) => s.user);
   const [patient, setPatient] = useState<any | null>(null);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
@@ -67,10 +69,21 @@ function PatientDashboard() {
       setLoading(true);
       try {
         const supabase = await getSupabaseAsync();
-        const {
+        let {
           data: { user },
         } = await supabase.auth.getUser();
-        if (!user?.id) throw new Error("Session introuvable. Veuillez vous reconnecter.");
+        const fallbackEmail = (user?.email ?? appUser?.email ?? "").toLowerCase();
+        if (!user?.id && fallbackEmail && DEMO_PASSWORDS[fallbackEmail]) {
+          await supabase.functions.invoke("ensure-demo-account", {
+            body: { email: fallbackEmail, password: DEMO_PASSWORDS[fallbackEmail] },
+          });
+          await supabase.auth.signInWithPassword({
+            email: fallbackEmail,
+            password: DEMO_PASSWORDS[fallbackEmail],
+          });
+          user = (await supabase.auth.getUser()).data.user;
+        }
+        if (!user?.id) throw new Error("Session Supabase introuvable. Veuillez vous reconnecter.");
         setAuthEmail(user.email ?? null);
         const sb: any = supabase;
         let { data: link, error: linkErr } = await sb
@@ -97,7 +110,7 @@ function PatientDashboard() {
           linkErr = retry.error;
         }
         if (linkErr) throw linkErr;
-        if (!link?.patient_id) throw new Error("Votre espace patient est en cours de creation. Reconnectez-vous dans quelques secondes.");
+        if (!link?.patient_id) throw new Error("Votre espace patient est en cours de création. Reconnectez-vous dans quelques secondes.");
         const pid = link.patient_id;
         if (alive) setPatient(link.patient);
         const [ap, pr, inv] = await Promise.all([
@@ -141,7 +154,7 @@ function PatientDashboard() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [appUser?.email]);
 
   const patientAppointments = useMemo(
     () =>
@@ -168,7 +181,7 @@ function PatientDashboard() {
       return;
     }
     if (!patient?.id) {
-      toast.error("Votre espace patient est en cours de creation. Reconnectez-vous dans quelques secondes.");
+      toast.error("Votre espace patient est en cours de création. Reconnectez-vous dans quelques secondes.");
       return;
     }
     try {
@@ -389,14 +402,14 @@ function PatientDashboard() {
         />
       </div>
 
-      {/* Rappels sante */}
+      {/* Rappels santé */}
       <div className="mt-4 space-y-3">
         <Button
           onClick={() => void runAiReminders()}
           disabled={reminderLoading}
           className="rounded-2xl gradient-mint text-[color:var(--navy)] font-semibold px-5 py-3 border-none shadow-mint disabled:opacity-60"
         >
-          Rappels & conseils sante
+          Rappels & conseils santé
         </Button>
         {reminderText ? (
           <Card className="rounded-2xl border bg-muted/40">

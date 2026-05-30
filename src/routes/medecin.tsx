@@ -1,4 +1,4 @@
-﻿import { createFileRoute, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { Calendar, Stethoscope, Users, FileText, Clock } from "lucide-react";
 import { motion } from "framer-motion";
@@ -369,7 +369,7 @@ function MedecinHome() {
         // ignore
       }
 
-      toast.success("Consultation crÃ©Ã©e.");
+      toast.success("Consultation cr��e.");
       setChiefComplaint("");
       setSymptoms("");
       setDiagnosis("");
@@ -377,7 +377,7 @@ function MedecinHome() {
       if (data?.id) setSelectedConsultationId(String(data.id));
       await openPatientFile(selectedAppt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Impossible de crÃ©er la consultation.");
+      toast.error(err?.message ?? "Impossible de cr�er la consultation.");
     } finally {
       setCreatingConsultation(false);
     }
@@ -386,7 +386,7 @@ function MedecinHome() {
   async function runAiSuggestion() {
     try {
       if (!chiefComplaint && !symptoms && !notes) {
-        toast.error("Renseigne motif/symptÃ´mes/notes pour une suggestion.");
+        toast.error("Renseigne motif/sympt�mes/notes pour une suggestion.");
         return;
       }
       setAiLoading(true);
@@ -403,7 +403,7 @@ function MedecinHome() {
   async function createPrescription() {
     if (!selectedAppt?.patient?.id) return;
     if (!selectedConsultationId) {
-      toast.error("SÃ©lectionne une consultation.");
+      toast.error("S�lectionne une consultation.");
       return;
     }
     const items = prescItems
@@ -415,7 +415,7 @@ function MedecinHome() {
       }))
       .filter((i) => i.medicine_name);
     if (!items.length) {
-      toast.error("Ajoute au moins un mÃ©dicament.");
+      toast.error("Ajoute au moins un m�dicament.");
       return;
     }
 
@@ -444,11 +444,11 @@ function MedecinHome() {
         .insert(items.map((i) => ({ ...i, prescription_id: prescId })));
       if (iErr) throw iErr;
 
-      toast.success("Prescription crÃ©Ã©e.");
+      toast.success("Prescription cr��e.");
       setPrescItems([{ medicine_name: "", dosage: "", frequency: "", duration: "" }]);
       await openPatientFile(selectedAppt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Impossible de crÃ©er la prescription.");
+      toast.error(err?.message ?? "Impossible de cr�er la prescription.");
     } finally {
       setCreatingPrescription(false);
     }
@@ -457,11 +457,11 @@ function MedecinHome() {
   async function createExamOrder() {
     if (!selectedAppt?.patient?.id) return;
     if (!selectedConsultationId) {
-      toast.error("SÃ©lectionne une consultation.");
+      toast.error("S�lectionne une consultation.");
       return;
     }
     if (!examType.trim()) {
-      toast.error("Type dâ€™examen requis.");
+      toast.error("Type d’examen requis.");
       return;
     }
 
@@ -484,13 +484,13 @@ function MedecinHome() {
         });
       if (error) throw error;
 
-      toast.success("Examen demandÃ©.");
+      toast.success("Examen demand�.");
       setExamType("");
       setExamPriority("routine");
       setExamNotes("");
       await openPatientFile(selectedAppt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Impossible de demander lâ€™examen.");
+      toast.error(err?.message ?? "Impossible de demander l’examen.");
     } finally {
       setCreatingExam(false);
     }
@@ -501,13 +501,13 @@ function MedecinHome() {
       <div className="grid sm:grid-cols-3 gap-5">
         <StatCard
           label="RDV aujourd'hui"
-          value={loading ? "â€¦" : String(todayCount)}
+          value={loading ? "..." : String(todayCount)}
           icon={Calendar}
           accent
         />
         <StatCard
           label="Patients suivis (aujourd'hui)"
-          value={loading ? "â€¦" : String(followedPatientsCount)}
+          value={loading ? "..." : String(followedPatientsCount)}
           icon={Users}
         />
         <StatCard
@@ -551,7 +551,7 @@ function MedecinHome() {
                 </div>
                 <span
                   className={`text-xs font-medium px-3 py-1 rounded-full ${
-                    a.status === "confirme" || a.status === "confirmÃ©"
+                    a.status === "confirme" || a.status === "confirm�"
                       ? "bg-[color:var(--mint)]/20 text-[color:var(--navy)]"
                       : "bg-amber-100 text-amber-700"
                   }`}
@@ -563,7 +563,7 @@ function MedecinHome() {
 
             {!loading && appointments.length === 0 ? (
               <div className="rounded-2xl border bg-muted/40 p-5 text-sm text-muted-foreground">
-                Aucun rendez-vous aujourdâ€™hui.
+                Aucun rendez-vous aujourd’hui.
               </div>
             ) : null}
           </div>
@@ -579,7 +579,7 @@ function MedecinHome() {
           <div className="mt-5 space-y-3">
             {[
               { icon: FileText, text: "Renouveler protocole d'hypertension pour A. Benani" },
-              { icon: Clock, text: "SynthÃ¨se hebdomadaire Ã  finaliser avant 18h" },
+              { icon: Clock, text: "Synth�se hebdomadaire � finaliser avant 18h" },
               { icon: FileText, text: "Compte-rendu de J. Dubois en attente" },
             ].map((n, i) => (
               <div key={i} className="flex gap-3 p-3 rounded-xl bg-muted/50">
@@ -603,7 +603,7 @@ function MedecinHome() {
             <div className="p-6 border-b flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-[color:var(--navy)]">
-                  Dossier patient Â· {selectedAppt.patient.first_name}{" "}
+                  Dossier patient � {selectedAppt.patient.first_name}{" "}
                   {selectedAppt.patient.last_name}
                 </h3>
                 {selectedAppt.patient.phone ? (<a href={whatsappUrlFor(selectedAppt.patient.phone)} target="_blank" rel="noreferrer" className="text-sm text-muted-foreground hover:text-[color:var(--navy)] hover:underline">WhatsApp: {selectedAppt.patient.phone}</a>) : null}
@@ -623,7 +623,7 @@ function MedecinHome() {
                   <h4 className="font-bold text-[color:var(--navy)]">Historique consultations</h4>
                   <div className="mt-4 space-y-3">
                     {patientLoading ? (
-                      <div className="text-sm text-muted-foreground">Chargementâ€¦</div>
+                      <div className="text-sm text-muted-foreground">Chargement...</div>
                     ) : patientConsultations.length ? (
                       patientConsultations.map((c) => (
                         <div
@@ -651,7 +651,7 @@ function MedecinHome() {
                       ))
                     ) : (
                       <div className="text-sm text-muted-foreground">
-                        Aucune consultation trouvÃ©e.
+                        Aucune consultation trouv�e.
                       </div>
                     )}
                   </div>
@@ -661,7 +661,7 @@ function MedecinHome() {
                   <h4 className="font-bold text-[color:var(--navy)]">Examens</h4>
                   <div className="mt-4 space-y-3">
                     {patientLoading ? (
-                      <div className="text-sm text-muted-foreground">Chargementâ€¦</div>
+                      <div className="text-sm text-muted-foreground">Chargement...</div>
                     ) : patientExamOrders.length ? (
                       patientExamOrders.map((o) => (
                         <div key={o.id} className="rounded-2xl border p-4">
@@ -670,19 +670,19 @@ function MedecinHome() {
                               {o.exam_type}
                             </div>
                             <span className="text-xs text-muted-foreground">
-                              {new Date(o.created_at).toLocaleDateString()} Â· {o.status}
+                              {new Date(o.created_at).toLocaleDateString()} � {o.status}
                             </span>
                           </div>
                           <div className="mt-2 text-sm text-muted-foreground">
-                            PrioritÃ©: {o.priority}
+                            Priorit�: {o.priority}
                           </div>
                           {o.result?.result_summary ? (
                             <div className="mt-2 text-sm text-[color:var(--navy)]">
-                              RÃ©sultat: {o.result.result_summary}
+                              R�sultat: {o.result.result_summary}
                             </div>
                           ) : (
                             <div className="mt-2 text-sm text-muted-foreground">
-                              RÃ©sultat non disponible.
+                              R�sultat non disponible.
                             </div>
                           )}
                         </div>
@@ -699,7 +699,7 @@ function MedecinHome() {
                   <h4 className="font-bold text-[color:var(--navy)]">Prescriptions</h4>
                   <div className="mt-4 space-y-3">
                     {patientLoading ? (
-                      <div className="text-sm text-muted-foreground">Chargementâ€¦</div>
+                      <div className="text-sm text-muted-foreground">Chargement...</div>
                     ) : patientPrescriptions.length ? (
                       patientPrescriptions.map((p) => (
                         <div key={p.id} className="rounded-2xl border p-4">
@@ -713,9 +713,9 @@ function MedecinHome() {
                             {(p.items ?? []).slice(0, 5).map((it) => (
                               <div key={it.id} className="text-sm text-muted-foreground">
                                 {it.medicine_name}
-                                {it.dosage ? ` Â· ${it.dosage}` : ""}
-                                {it.frequency ? ` Â· ${it.frequency}` : ""}
-                                {it.duration ? ` Â· ${it.duration}` : ""}
+                                {it.dosage ? ` � ${it.dosage}` : ""}
+                                {it.frequency ? ` � ${it.frequency}` : ""}
+                                {it.duration ? ` � ${it.duration}` : ""}
                               </div>
                             ))}
                           </div>
@@ -743,7 +743,7 @@ function MedecinHome() {
                       <input
                         value={symptoms}
                         onChange={(e) => setSymptoms(e.target.value)}
-                        placeholder="SymptÃ´mes"
+                        placeholder="Symptômes"
                         className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
                       />
                       <input
@@ -765,7 +765,7 @@ function MedecinHome() {
                           disabled={aiLoading}
                           className="rounded-2xl border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
                         >
-                          Suggérer orientation
+                          Sugg�rer orientation
                         </button>
                         {aiSuggestion ? (
                           <span className="text-[10px] text-muted-foreground">
@@ -779,14 +779,14 @@ function MedecinHome() {
                         disabled={creatingConsultation}
                         className="w-full rounded-2xl gradient-mint text-[color:var(--navy)] font-semibold py-3 disabled:opacity-60"
                       >
-                        CrÃ©er consultation
+                        Créer consultation
                       </button>
                     </div>
 
                     <div className="space-y-2">
                       <div className="flex gap-2 items-center text-sm font-semibold text-[color:var(--navy)]">
                         <Stethoscope className="size-4" /> Prescription (sur la consultation
-                        sÃ©lectionnÃ©e)
+                        sélectionnée)
                       </div>
                       {prescItems.map((it, idx) => (
                         <div key={idx} className="rounded-2xl border p-3 space-y-2">
@@ -801,7 +801,7 @@ function MedecinHome() {
                             }
                             className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                           >
-                            <option value="">â€” SÃ©lectionner un mÃ©dicament â€”</option>
+                            <option value="">- S�lectionner un m�dicament -</option>
                             {medicineOptions.map((n) => (
                               <option key={n} value={n}>
                                 {n}
@@ -830,7 +830,7 @@ function MedecinHome() {
                                   ),
                                 )
                               }
-                              placeholder="FrÃ©quence"
+                              placeholder="Fr�quence"
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                             />
                             <input
@@ -842,7 +842,7 @@ function MedecinHome() {
                                   ),
                                 )
                               }
-                              placeholder="DurÃ©e"
+                              placeholder="Dur�e"
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none col-span-2"
                             />
                           </div>
@@ -868,7 +868,7 @@ function MedecinHome() {
                         }
                         className="w-full rounded-2xl border py-2.5 text-sm hover:bg-muted"
                       >
-                        Ajouter un mÃ©dicament
+                        Ajouter un m�dicament
                       </button>
                       <button
                         type="button"
@@ -882,12 +882,12 @@ function MedecinHome() {
 
                     <div className="space-y-2">
                       <div className="flex gap-2 items-center text-sm font-semibold text-[color:var(--navy)]">
-                        <Clock className="size-4" /> Demande dâ€™examen
+                        <Clock className="size-4" /> Demande d’examen
                       </div>
                       <input
                         value={examType}
                         onChange={(e) => setExamType(e.target.value)}
-                        placeholder="Type (ex: NFS, GlycÃ©mie, Radio...)"
+                        placeholder="Type (ex: NFS, Glyc�mie, Radio...)"
                         className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
                       />
                       <div className="grid grid-cols-2 gap-2">
@@ -931,5 +931,6 @@ function MedecinHome() {
     </DashboardLayout>
   );
 }
+
 
 

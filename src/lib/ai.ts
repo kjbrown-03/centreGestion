@@ -40,9 +40,9 @@ export async function medicalChatbot(params: ChatbotParams): Promise<string> {
   if (params.role === "patient") {
     try {
       const prompt = [
-        "Tu es le chatbot medical du Centre de Sante 2KC au Cameroun.",
-        "Reponds en francais simple, avec prudence, sans poser de diagnostic definitif.",
-        "Si les symptomes semblent graves, conseille de contacter le centre sur WhatsApp au 693904197 ou d'aller aux urgences.",
+        "Tu es le chatbot médical du Centre de Santé 2KC au Cameroun.",
+        "Réponds en français simple, avec prudence, sans poser de diagnostic définitif.",
+        "Si les symptômes semblent graves, conseille de contacter le centre sur WhatsApp au 693904197 ou d'aller aux urgences.",
         params.context?.length ? `Contexte recent: ${params.context.slice(0, 3).join(" | ")}` : "",
         `Patient: ${params.userName ?? "Patient"}`,
         `Question: ${params.message}`,
@@ -69,7 +69,7 @@ export function medicalChatbotAnswer(message: string, role = "patient", context:
   const contextLine = context.length ? "\n\nContexte recent: " + context.slice(0, 2).join(" | ") : "";
 
   if (!text) {
-    return "Posez votre question de sante. Je peux vous orienter, mais je ne remplace pas une consultation medicale.";
+    return "Posez votre question de santé. Je peux vous orienter, mais je ne remplace pas une consultation médicale.";
   }
 
   if (hasAny(text, emergencyWords)) {
@@ -108,7 +108,7 @@ export function medicalChatbotAnswer(message: string, role = "patient", context:
     return [
       "En cas de grossesse ou suspicion, prenez rendez-vous pour une confirmation et un suivi prenatal.",
       "Consultez en urgence si douleurs fortes, saignements, fievre, vertiges ou diminution des mouvements du bebe.",
-      "Ne prenez pas de medicament sans avis d'un professionnel de sante.",
+      "Ne prenez pas de médicament sans avis d'un professionnel de santé.",
     ].join("\n");
   }
 
@@ -134,7 +134,7 @@ export function medicalChatbotAnswer(message: string, role = "patient", context:
 
   return [
     "Je peux donner une orientation generale, mais seul un professionnel peut poser un diagnostic.",
-    "Decrivez vos symptomes: age, duree, temperature, douleur, medicaments pris et antecedents.",
+    "Décrivez vos symptômes: âge, durée, température, douleur, médicaments pris et antécédents.",
     "Si les symptomes sont importants ou s'aggravent, contactez le centre sur WhatsApp au 693904197.",
     contextLine,
   ]
@@ -205,7 +205,7 @@ export async function patientReminders(params: {
   );
   return [
     ap ? `Prochain rendez-vous: ${ap}.` : "Aucun rendez-vous a venir dans le dossier.",
-    meds.length ? `Medicaments a respecter: ${meds.join("; ")}.` : "Aucun medicament actif trouve.",
+    meds.length ? `Médicaments à respecter: ${meds.join("; ")}.` : "Aucun médicament actif trouvé.",
     "Conseil: hydratez-vous, reposez-vous et contactez le centre si les symptomes s'aggravent.",
   ].join("\n");
 }

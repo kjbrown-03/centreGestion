@@ -16,7 +16,7 @@ function CentrePage() {
         <div className="absolute inset-0 opacity-30">
           <img
             src="https://images.unsplash.com/photo-1586773860418-d37222d8fce3?w=1800&q=80"
-            alt="Centre de sante 2KC"
+            alt="Centre de santé 2KC"
             className="size-full object-cover"
           />
         </div>
@@ -30,15 +30,15 @@ function CentrePage() {
               <span className="size-12 rounded-2xl gradient-mint grid place-items-center text-[color:var(--navy)]">
                 <Activity className="size-6" />
               </span>
-              <p className="text-sm uppercase tracking-widest text-[color:var(--mint)]">Centre de Sante 2KC</p>
+              <p className="text-sm uppercase tracking-widest text-[color:var(--mint)]">Centre de Santé 2KC</p>
             </div>
             <h1 className="mt-6 text-4xl sm:text-6xl font-bold leading-tight">
-              Un centre camerounais pense pour un parcours de soins fluide.
+              Un centre camerounais pensé pour un parcours de soins fluide.
             </h1>
             <p className="mt-6 text-lg text-white/75 leading-relaxed">
-              2KC centralise l'accueil, les rendez-vous, le dossier medical, la pharmacie,
-              la facturation en FCFA et le suivi patient pour aider chaque acteur du centre a
-              travailler avec des donnees fiables et securisees.
+              2KC centralise l'accueil, les rendez-vous, le dossier médical, la pharmacie,
+              la facturation en FCFA et le suivi patient pour aider chaque acteur du centre à
+              travailler avec des données fiables et sécurisées.
             </p>
           </div>
         </div>
@@ -47,12 +47,12 @@ function CentrePage() {
       <section className="py-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 grid lg:grid-cols-3 gap-6">
           {[
-            "Accueil et rendez-vous connectes a Supabase",
-            "Dossier patient, prescriptions et examens securises par RLS",
+            "Accueil et rendez-vous connectés à Supabase",
+            "Dossier patient, prescriptions et examens sécurisés par RLS",
             "Stock pharmacie et facturation adaptes au FCFA",
-            "Notifications ciblees par role dans chaque tableau de bord",
+            "Notifications ciblées par rôle dans chaque tableau de bord",
             "Espace patient avec rendez-vous, ordonnances, factures et messagerie",
-            "Administration des utilisateurs et roles depuis la base",
+            "Administration des utilisateurs et rôles depuis la base",
           ].map((item) => (
             <div key={item} className="rounded-2xl border bg-card p-5 flex gap-3">
               <CheckCircle2 className="size-5 text-[color:var(--mint)] shrink-0 mt-0.5" />
@@ -85,9 +85,17 @@ function CentrePage() {
 
       <section className="pb-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="mb-6">
+            <p className="text-sm font-semibold uppercase tracking-widest text-[color:var(--mint)]">
+              Nous trouver
+            </p>
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-[color:var(--navy)]">
+              Centre de Santé 2KC à Douala
+            </h2>
+          </div>
           <div className="overflow-hidden rounded-3xl border bg-card h-[420px]">
             <iframe
-              title="Carte Google Maps du Centre de Sante 2KC"
+              title="Carte Google Maps du Centre de Santé 2KC"
               src={GOOGLE_MAPS_EMBED_URL}
               className="size-full border-0"
               loading="lazy"

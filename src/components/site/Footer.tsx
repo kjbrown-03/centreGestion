@@ -14,7 +14,7 @@ export function Footer() {
               2KC
             </div>
             <p className="mt-4 text-white/65 max-w-sm">
-              Le Centre de Sante 2KC, pour une medecine moderne, humaine et accessible au Cameroun.
+              Le Centre de Santé 2KC, pour une médecine moderne, humaine et accessible au Cameroun.
             </p>
           </div>
           <div className="space-y-3 text-white/80">
@@ -30,7 +30,7 @@ export function Footer() {
           </div>
         </div>
         <div className="mt-16 border-t border-white/10 pt-6 text-center text-xs text-white/40">
-          (c) {new Date().getFullYear()} Centre de Sante 2KC. Tous droits reserves.
+          (c) {new Date().getFullYear()} Centre de Santé 2KC. Tous droits réservés.
         </div>
       </div>
     </footer>

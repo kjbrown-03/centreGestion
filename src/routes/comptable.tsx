@@ -1,4 +1,4 @@
-﻿import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { FileText, CreditCard, Wallet, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
@@ -164,23 +164,23 @@ function ComptableHome() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
           label="Factures du jour"
-          value={loading ? "â€¦" : String(invoicesCount)}
+          value={loading ? "..." : String(invoicesCount)}
           icon={FileText}
           accent
         />
         <StatCard
-          label="Paiements encaissÃ©s"
-          value={loading ? "â€¦" : fmt(paymentsSum)}
+          label="Paiements encaiss�s"
+          value={loading ? "..." : fmt(paymentsSum)}
           icon={Wallet}
         />
         <StatCard
           label="Mobile Money"
-          value={loading ? "â€¦" : fmt(mobileMoneySum)}
+          value={loading ? "..." : fmt(mobileMoneySum)}
           icon={CreditCard}
         />
         <StatCard
-          label="Reste Ã  payer"
-          value={loading ? "â€¦" : fmt(outstanding)}
+          label="Reste � payer"
+          value={loading ? "..." : fmt(outstanding)}
           icon={TrendingUp}
         />
       </div>
@@ -244,7 +244,7 @@ function ComptableHome() {
               >
                 <div>
                   <p className="font-semibold text-[color:var(--navy)]">
-                    {x.invoice?.invoice_no ?? "â€”"}
+                    {x.invoice?.invoice_no ?? "-"}
                   </p>
                   <p className="text-xs text-muted-foreground">Mode: {x.method}</p>
                 </div>
@@ -262,8 +262,8 @@ function ComptableHome() {
           transition={{ delay: 0.1 }}
           className="rounded-3xl gradient-hero p-7 text-white"
         >
-          <h3 className="text-lg font-bold">Rapport synthÃ©tique</h3>
-          <p className="text-white/70 text-sm">JournÃ©e en cours</p>
+          <h3 className="text-lg font-bold">Rapport synth�tique</h3>
+          <p className="text-white/70 text-sm">Journ�e en cours</p>
           <div className="mt-6 space-y-3">
             {[
               {
@@ -274,15 +274,15 @@ function ComptableHome() {
                         invoices.reduce((s, f) => s + Number(f.total || 0), 0) / invoicesCount,
                       ),
                     )
-                  : "â€”",
+                  : "-",
               },
               {
                 label: "Paiement moyen",
-                value: payments.length ? fmt(Math.round(paymentsSum / payments.length)) : "â€”",
+                value: payments.length ? fmt(Math.round(paymentsSum / payments.length)) : "-",
               },
               {
                 label: "Part Mobile Money",
-                value: paymentsSum ? Math.round((mobileMoneySum / paymentsSum) * 100) + "%" : "â€”",
+                value: paymentsSum ? Math.round((mobileMoneySum / paymentsSum) * 100) + "%" : "-",
               },
             ].map((k) => (
               <div
@@ -312,5 +312,6 @@ function ComptableHome() {
     </DashboardLayout>
   );
 }
+
 
 

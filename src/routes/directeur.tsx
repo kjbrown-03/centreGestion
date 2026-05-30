@@ -1,4 +1,4 @@
-﻿import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { Users, Calendar, Activity, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
@@ -119,10 +119,10 @@ function DirecteurHome() {
   return (
     <DashboardLayout allow="directeur" title="Tableau de bord (lecture seule)">
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatCard label="Patients / jour" value={loading ? "â€¦" : String(uniquePatients)} icon={Users} accent />
-        <StatCard label="RDV aujourd'hui" value={loading ? "â€¦" : String(apptCount)} icon={Calendar} />
-        <StatCard label="Valeur stock (pharmacie)" value={loading ? "â€¦" : fmt(stockValue)} icon={Activity} />
-        <StatCard label="Revenus (mois)" value={loading ? "â€¦" : fmt(monthRevenue)} icon={TrendingUp} />
+        <StatCard label="Patients / jour" value={loading ? "..." : String(uniquePatients)} icon={Users} accent />
+        <StatCard label="RDV aujourd'hui" value={loading ? "..." : String(apptCount)} icon={Calendar} />
+        <StatCard label="Valeur stock (pharmacie)" value={loading ? "..." : fmt(stockValue)} icon={Activity} />
+        <StatCard label="Revenus (mois)" value={loading ? "..." : fmt(monthRevenue)} icon={TrendingUp} />
       </div>
 
       <div className="mt-4 space-y-3">
@@ -148,13 +148,13 @@ function DirecteurHome() {
         animate={{ opacity: 1, y: 0 }}
         className="mt-8 rounded-3xl border bg-card p-7"
       >
-        <h3 className="text-lg font-bold text-[color:var(--navy)]">Indicateurs clÃ©s</h3>
-        <p className="mt-2 text-sm text-muted-foreground">Vue synthÃ©tique.</p>
+        <h3 className="text-lg font-bold text-[color:var(--navy)]">Indicateurs cl�s</h3>
+        <p className="mt-2 text-sm text-muted-foreground">Vue synth�tique.</p>
         <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[
-            { k: "Patients uniques (jour)", v: loading ? "â€¦" : String(uniquePatients) },
-            { k: "RDV planifiÃ©s", v: loading ? "â€¦" : String(apptCount) },
-            { k: "Encaissements (mois)", v: loading ? "â€¦" : fmt(monthRevenue) },
+            { k: "Patients uniques (jour)", v: loading ? "..." : String(uniquePatients) },
+            { k: "RDV planifi�s", v: loading ? "..." : String(apptCount) },
+            { k: "Encaissements (mois)", v: loading ? "..." : fmt(monthRevenue) },
           ].map((x) => (
             <div key={x.k} className="rounded-2xl border p-5 bg-muted/10">
               <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">{x.k}</p>
@@ -166,5 +166,6 @@ function DirecteurHome() {
     </DashboardLayout>
   );
 }
+
 
 

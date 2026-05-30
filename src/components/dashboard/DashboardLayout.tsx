@@ -41,7 +41,7 @@ const NAV: Record<Role, NavItem[]> = {
   comptable: [{ to: "/comptable", label: "Facturation", icon: FileText }],
   pharmacien: [{ to: "/pharmacien", label: "Pharmacie", icon: Pill }],
   directeur: [{ to: "/directeur", label: "Tableau de bord", icon: LayoutDashboard }],
-  patient: [{ to: "/patient", label: "Mon Espace", icon: LayoutDashboard }],
+  patient: [{ to: "/patient", label: "Mon Espace Santé", icon: LayoutDashboard }],
 };
 
 export function DashboardLayout({
@@ -188,6 +188,7 @@ export function DashboardLayout({
         const sb: any = supabase;
         const authUser = (await supabase.auth.getUser()).data.user;
         const role = user.role as Role;
+        const authUserId = authUser?.id;
 
         if (role === "admin") {
           const { data, error } = await sb.schema("app").from("profiles").select("user_id, full_name, role, created_at").order("created_at", { ascending: false }).limit(5);
@@ -206,12 +207,16 @@ export function DashboardLayout({
             if (n?.id) pushMessage({ id: `appt-${n.id}`, at: String(n.created_at ?? n.scheduled_at ?? ""), text: `Nouveau rendez-vous: ${n.reason ?? "Consultation"}` });
           }).subscribe());
         } else if (role === "medecin") {
-          const { data, error } = await sb.schema("app").from("appointments").select("id, created_at, scheduled_at, status, reason, patient:patient_id(first_name,last_name)").eq("practitioner_id", authUser?.id).order("scheduled_at", { ascending: false }).limit(5);
+          if (!authUserId) {
+            if (alive) setMessages([]);
+            return;
+          }
+          const { data, error } = await sb.schema("app").from("appointments").select("id, created_at, scheduled_at, status, reason, patient:patient_id(first_name,last_name)").eq("practitioner_id", authUserId).order("scheduled_at", { ascending: false }).limit(5);
           if (error) throw error;
           if (alive) setMessages((data ?? []).map((r: any) => ({ id: `doctor-appt-${r.id}`, at: String(r.scheduled_at ?? r.created_at ?? ""), text: `RDV assigne: ${r.patient ? `${r.patient.first_name} ${r.patient.last_name}` : "Patient"} - ${r.status}` })));
           channels.push(supabase.channel(`notify_doctor_${Date.now()}`).on("postgres_changes", { event: "*", schema: "app", table: "appointments" }, (payload: any) => {
             const n = payload?.new;
-            if (n?.id && n.practitioner_id === authUser?.id) pushMessage({ id: `doctor-appt-${n.id}`, at: String(n.scheduled_at ?? ""), text: `RDV mis a jour: ${n.status}` });
+            if (n?.id && n.practitioner_id === authUserId) pushMessage({ id: `doctor-appt-${n.id}`, at: String(n.scheduled_at ?? ""), text: `RDV mis a jour: ${n.status}` });
           }).subscribe());
         } else if (role === "pharmacien") {
           const { data, error } = await sb.schema("app").from("prescriptions").select("id, created_at, status").order("created_at", { ascending: false }).limit(5);
@@ -230,16 +235,42 @@ export function DashboardLayout({
             if (n?.id) pushMessage({ id: `invoice-${n.id}`, at: String(n.created_at ?? ""), text: `Nouvelle facture: ${n.invoice_no ?? ""}` });
           }).subscribe());
         } else if (role === "patient") {
-          const link = await sb.schema("app").from("patient_accounts").select("patient_id").eq("user_id", authUser?.id).maybeSingle();
+          if (!authUserId) {
+            if (alive) setMessages([]);
+            return;
+          }
+          const link = await sb.schema("app").from("patient_accounts").select("patient_id").eq("user_id", authUserId).maybeSingle();
           if (link.error) throw link.error;
           const pid = link.data?.patient_id;
           if (!pid) {
             if (alive) setMessages([]);
             return;
           }
-          const { data, error } = await sb.schema("app").from("appointments").select("id, created_at, scheduled_at, status, reason").eq("patient_id", pid).order("created_at", { ascending: false }).limit(5);
-          if (error) throw error;
-          if (alive) setMessages((data ?? []).map((r: any) => ({ id: `patient-appt-${r.id}`, at: String(r.created_at ?? r.scheduled_at ?? ""), text: `Votre RDV: ${r.status} - ${r.reason ?? "Consultation"}` })));
+          const [appts, prescs, invoices] = await Promise.all([
+            sb.schema("app").from("appointments").select("id, created_at, scheduled_at, status, reason").eq("patient_id", pid).order("created_at", { ascending: false }).limit(3),
+            sb.schema("app").from("prescriptions").select("id, created_at, status").eq("patient_id", pid).order("created_at", { ascending: false }).limit(2),
+            sb.schema("app").from("invoices").select("id, invoice_no, status, total, created_at").eq("patient_id", pid).order("created_at", { ascending: false }).limit(2),
+          ]);
+          if (appts.error) throw appts.error;
+          if (prescs.error) throw prescs.error;
+          if (invoices.error) throw invoices.error;
+          if (alive) {
+            setMessages([
+              ...(appts.data ?? []).map((r: any) => ({ id: `patient-appt-${r.id}`, at: String(r.created_at ?? r.scheduled_at ?? ""), text: `Rendez-vous ${r.status}: ${r.reason ?? "Consultation"}` })),
+              ...(prescs.data ?? []).map((r: any) => ({ id: `patient-presc-${r.id}`, at: String(r.created_at ?? ""), text: `Ordonnance ${r.status ?? "créée"}` })),
+              ...(invoices.data ?? []).map((r: any) => ({ id: `patient-invoice-${r.id}`, at: String(r.created_at ?? ""), text: `Facture ${r.invoice_no ?? ""}: ${Number(r.total ?? 0).toLocaleString("fr-FR")} FCFA (${r.status})` })),
+            ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 5));
+          }
+          channels.push(supabase.channel(`notify_patient_${pid}_${Date.now()}`).on("postgres_changes", { event: "*", schema: "app", table: "appointments", filter: `patient_id=eq.${pid}` }, (payload: any) => {
+            const n = payload?.new;
+            if (n?.id) pushMessage({ id: `patient-appt-${n.id}`, at: String(n.created_at ?? n.scheduled_at ?? ""), text: `Rendez-vous ${n.status}: ${n.reason ?? "Consultation"}` });
+          }).on("postgres_changes", { event: "INSERT", schema: "app", table: "prescriptions", filter: `patient_id=eq.${pid}` }, (payload: any) => {
+            const n = payload?.new;
+            if (n?.id) pushMessage({ id: `patient-presc-${n.id}`, at: String(n.created_at ?? ""), text: "Nouvelle ordonnance disponible" });
+          }).on("postgres_changes", { event: "INSERT", schema: "app", table: "invoices", filter: `patient_id=eq.${pid}` }, (payload: any) => {
+            const n = payload?.new;
+            if (n?.id) pushMessage({ id: `patient-invoice-${n.id}`, at: String(n.created_at ?? ""), text: `Nouvelle facture: ${n.invoice_no ?? ""}` });
+          }).subscribe());
         } else {
           if (alive) setMessages([]);
         }
@@ -463,8 +494,8 @@ export function DashboardLayout({
                     <Bot className="size-5" />
                   </span>
                   <div className="min-w-0">
-                    <p className="font-semibold text-[color:var(--navy)] truncate">Chatbot médical</p>
-                    <p className="text-xs text-muted-foreground truncate">Réponses automatiques aux patients</p>
+                    <p className="font-semibold text-[color:var(--navy)] truncate">Assistant santé</p>
+                    <p className="text-xs text-muted-foreground truncate">Connecté à Gemini via Supabase</p>
                   </div>
                 </div>
                 <button
@@ -558,7 +589,7 @@ function proactiveIntro(role: Role) {
     case "directeur":
       return "Je peux résumer les indicateurs, les alertes et les priorités du centre.";
     default:
-      return "Je peux vous aider Ã  piloter les tÃ¢ches importantes du centre.";
+      return "Je peux vous aider à piloter les tâches importantes du centre.";
   }
 }
 
@@ -569,7 +600,7 @@ function quickPromptsForRole(role: Role) {
     infirmier: ["Soins prioritaires", "Patients à risque"],
     secretaire: ["Prioriser les RDV", "Relances patients"],
     comptable: ["Paiements en retard", "Rapport financier"],
-    pharmacien: ["Stocks faibles", "Commande recommandÃ©e"],
+    pharmacien: ["Stocks faibles", "Commande recommandée"],
     directeur: ["Priorités du jour", "Analyse KPI"],
     patient: ["Mes rappels", "Conseils santé"],
   };
