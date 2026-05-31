@@ -277,6 +277,7 @@ export const enDict: Record<string, string> = {
   "Envoyer demande": "Send request",
   "Messages reçus de vos patients": "Messages received from your patients",
   "Cliquez sur un RDV pour répondre à un patient": "Click on an appointment to reply to a patient",
+  "Actualiser": "Refresh",
   "Aucune facture enregistrée.": "No invoices on record.",
 
   // ——— Espace infirmier ———

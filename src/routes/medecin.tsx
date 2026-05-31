@@ -149,6 +149,8 @@ function MedecinHome() {
         .insert({ patient_id: selectedAppt.patient.id, practitioner_id: authUser.id, sender: "praticien", body: txt });
       if (error) throw error;
       setMsgBody("");
+
+      // Recharger les messages du dossier patient ouvert
       const { data, error: rErr } = await (supabase as any)
         .schema("app")
         .from("messages")
@@ -156,6 +158,20 @@ function MedecinHome() {
         .eq("patient_id", selectedAppt.patient.id)
         .order("created_at", { ascending: true });
       if (!rErr) setMessages(data ?? []);
+
+      // Mettre à jour aussi le panel messagerie de la page principale
+      const newMsg = {
+        id: crypto.randomUUID(),
+        body: txt,
+        sender: "praticien",
+        created_at: new Date().toISOString(),
+        patient_id: selectedAppt.patient.id,
+        practitioner_id: authUser.id,
+        patient: selectedAppt.patient
+          ? { first_name: selectedAppt.patient.first_name, last_name: selectedAppt.patient.last_name }
+          : null,
+      };
+      setAllMessages((prev) => [newMsg, ...prev]);
     } catch (err: any) {
       toast.error(err?.message ?? t("Envoi impossible."));
     } finally {

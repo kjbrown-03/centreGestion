@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
-import { FileText, CreditCard, Wallet, TrendingUp, X, Download, Bell } from "lucide-react";
+import { FileText, CreditCard, Wallet, TrendingUp, X, Download, Bell, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseAsync } from "@/lib/supabase";
@@ -66,22 +66,21 @@ function ComptableHome() {
 
   useEffect(() => {
     let alive = true;
+    let realtimeChannel: any = null;
+    let supabaseInstance: any = null;
+
     async function load() {
       setLoading(true);
       try {
         const supabase = await getSupabaseAsync();
         const sb: any = supabase;
         const [inv, pay] = await Promise.all([
-          // Toutes les factures non payées (pas de filtre date)
           sb
             .schema("app")
             .from("invoices")
-            .select(
-              `id, invoice_no, status, total, created_at, patient:patient_id (first_name, last_name)`,
-            )
+            .select(`id, invoice_no, status, total, created_at, patient:patient_id (first_name, last_name)`)
             .order("created_at", { ascending: false })
             .limit(100),
-          // Paiements du jour
           sb
             .schema("app")
             .from("payments")
@@ -100,33 +99,38 @@ function ComptableHome() {
         if (alive) setLoading(false);
       }
     }
+
     void load();
-    // Realtime notifications for new invoices/payments
-    void getSupabaseAsync().then((supabase) => {
+
+    // Realtime — subscription correctement nettoyée via ref local
+    getSupabaseAsync().then((supabase) => {
       if (!alive) return;
-      const channel = supabase
-        .channel(`finance_${Date.now()}`)
-        .on("postgres_changes", { event: "INSERT", schema: "app", table: "invoices" }, (payload) => {
-          const row: any = payload?.new ?? {};
-          if (row && row.status !== "payee") setHasNew(true);
-          void load();
+      supabaseInstance = supabase;
+      realtimeChannel = supabase
+        .channel(`finance_comptable_${Date.now()}`)
+        .on("postgres_changes", { event: "INSERT", schema: "app", table: "invoices" }, () => {
+          if (alive) { setHasNew(true); void load(); }
+        })
+        .on("postgres_changes", { event: "UPDATE", schema: "app", table: "invoices" }, () => {
+          if (alive) void load();
         })
         .on("postgres_changes", { event: "INSERT", schema: "app", table: "payments" }, () => {
-          void load();
+          if (alive) void load();
         })
         .subscribe();
-      // cleanup
-      (supabase as any)._financeChannel = channel;
     });
+
+    // Polling toutes les 15s en cas d'échec de realtime
+    const pollId = setInterval(() => { if (alive) void load(); }, 15000);
+
     return () => {
       alive = false;
+      clearInterval(pollId);
       try {
-        const supabase = (window as any)?.supabase;
-        const ch = (supabase as any)?._financeChannel;
-        if (ch && supabase?.removeChannel) supabase.removeChannel(ch);
-      } catch {
-        // ignore
-      }
+        if (realtimeChannel && supabaseInstance?.removeChannel) {
+          supabaseInstance.removeChannel(realtimeChannel);
+        }
+      } catch { /* ignore */ }
     };
   }, [todayStart, tomorrowStart]);
 
@@ -439,39 +443,40 @@ function ComptableHome() {
           animate={{ opacity: 1, y: 0 }}
           className="lg:col-span-2 rounded-3xl border bg-card p-7"
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 justify-between">
             <h3 className="text-lg font-bold text-[color:var(--navy)]">{t("Factures à encaisser")}</h3>
-            <button
-              type="button"
-              onClick={() => {
-                setHasNew(false);
-                void (async () => {
-                  setLoading(true);
-                  try {
-                    const supabase = await getSupabaseAsync();
-                    const sb: any = supabase;
-                    const inv = await sb
-                      .schema("app")
-                      .from("invoices")
-                      .select(
-                        `id, invoice_no, status, total, created_at, patient:patient_id (first_name, last_name)`,
-                      )
-                      .order("created_at", { ascending: false })
-                      .limit(100);
-                    if (!inv.error) setInvoices((inv.data ?? []) as any);
-                  } finally {
-                    setLoading(false);
-                  }
-                })();
-              }}
-              className="relative inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs hover:bg-muted"
-              title={t("Notifications")}
-            >
-              <Bell className="size-4" />
+            <div className="flex items-center gap-2">
               {hasNew ? (
-                <span className="absolute -top-1 -right-1 inline-block w-2.5 h-2.5 bg-red-500 rounded-full" />
+                <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded-lg flex items-center gap-1">
+                  <Bell className="size-3" /> Nouvelles factures
+                </span>
               ) : null}
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHasNew(false);
+                  void (async () => {
+                    setLoading(true);
+                    try {
+                      const supabase = await getSupabaseAsync();
+                      const sb: any = supabase;
+                      const [inv, pay] = await Promise.all([
+                        sb.schema("app").from("invoices").select(`id, invoice_no, status, total, created_at, patient:patient_id (first_name, last_name)`).order("created_at", { ascending: false }).limit(100),
+                        sb.schema("app").from("payments").select(`id, amount, method, received_at, invoice:invoice_id (invoice_no)`).order("received_at", { ascending: false }),
+                      ]);
+                      if (!inv.error) setInvoices((inv.data ?? []) as any);
+                      if (!pay.error) setPayments((pay.data ?? []) as any);
+                    } finally {
+                      setLoading(false);
+                    }
+                  })();
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold hover:bg-muted transition"
+                title={t("Actualiser")}
+              >
+                <RefreshCw className="size-3.5" /> {t("Actualiser")}
+              </button>
+            </div>
           </div>
           <div className="mt-5 space-y-2">
             {(loading ? [] : invoices).map((x) => {
