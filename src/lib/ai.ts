@@ -1,4 +1,4 @@
-import { getSupabaseAsync } from "@/lib/supabase";
+﻿import { getSupabaseAsync } from "@/lib/supabase";
 
 type ChatbotParams = {
   role: string;

@@ -334,7 +334,10 @@ export function DashboardLayout({
             if (n?.id) pushMessage({ id: `patient-presc-${n.id}`, at: String(n.created_at ?? ""), text: "Nouvelle ordonnance disponible" });
           }).on("postgres_changes", { event: "INSERT", schema: "app", table: "invoices", filter: `patient_id=eq.${pid}` }, (payload: any) => {
             const n = payload?.new;
-            if (n?.id) pushMessage({ id: `patient-invoice-${n.id}`, at: String(n.created_at ?? ""), text: `Nouvelle facture: ${n.invoice_no ?? ""}` });
+            if (n?.id) pushMessage({ id: `patient-invoice-${n.id}`, at: String(n.created_at ?? ""), text: `Nouvelle facture disponible: ${n.invoice_no ?? ""} — consultez l'onglet Factures` });
+          }).on("postgres_changes", { event: "UPDATE", schema: "app", table: "invoices", filter: `patient_id=eq.${pid}` }, (payload: any) => {
+            const n = payload?.new;
+            if (n?.id && n.status === "payee") pushMessage({ id: `patient-invoice-paid-${n.id}`, at: new Date().toISOString(), text: `Facture ${n.invoice_no ?? ""} réglée ✓ — merci pour votre paiement` });
           }).subscribe());
         } else {
           if (alive) setMessages([]);

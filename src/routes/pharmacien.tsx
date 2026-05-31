@@ -1,4 +1,4 @@
-﻿import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { type Medicine } from "@/lib/store";
 import { Pill, AlertTriangle, Sparkles, CheckCircle2, FileText } from "lucide-react";
@@ -11,6 +11,7 @@ export const Route = createFileRoute("/pharmacien")({ component: PharmacienHome 
 
 type Prescription = {
   id: string;
+  patient_id: string;
   created_at: string;
   status: string;
   patient?: { first_name: string; last_name: string } | null;
@@ -53,7 +54,7 @@ function PharmacienHome() {
             .schema("app")
             .from("prescriptions")
             .select(
-              "id, created_at, status, patient:patient_id(first_name,last_name), practitioner:practitioner_id(full_name), items:prescription_items(id, medicine_name, dosage, frequency, duration)",
+              "id, patient_id, created_at, status, patient:patient_id(first_name,last_name), practitioner:practitioner_id(full_name), items:prescription_items(id, medicine_name, dosage, frequency, duration)",
             )
             .eq("status", "active")
             .order("created_at", { ascending: false })
@@ -108,7 +109,7 @@ function PharmacienHome() {
       const { error: dErr } = await sb.schema("app").from("dispensations").insert({
         prescription_id: presc.id,
         dispensed_by: authUser.id,
-        notes: "Delivrance depuis l'ecran pharmacien",
+        notes: "Délivrance depuis l'écran pharmacien",
       });
       if (dErr) throw dErr;
 
@@ -121,7 +122,12 @@ function PharmacienHome() {
       for (const item of presc.items ?? []) {
         const med = meds.find((m) => m.name.toLowerCase() === item.medicine_name.toLowerCase());
         if (!med) continue;
-        const nextStock = Math.max(0, med.stock - 1);
+        // Parse quantity from dosage prefix like "2×500mg" or "2x500mg"
+        let qty = 1;
+        const qtyMatch = item.dosage?.match(/^(\d+)\s*[x×]/i);
+        if (qtyMatch) qty = parseInt(qtyMatch[1]) || 1;
+
+        const nextStock = Math.max(0, med.stock - qty);
         await sb.schema("app").from("stock_items").update({ stock: nextStock }).eq("id", med.id);
         await sb
           .schema("app")
@@ -129,23 +135,62 @@ function PharmacienHome() {
           .insert({
             item_id: med.id,
             moved_by: authUser.id,
-            delta: -1,
+            delta: -qty,
             reason: "dispensation",
             meta: { prescription_id: presc.id, medicine_name: item.medicine_name },
           });
       }
 
+      // Auto-create invoice for the dispensed medicines
+      if (presc.patient_id) {
+        try {
+          const invoiceItems = (presc.items ?? [])
+            .map((item) => {
+              const med = meds.find(
+                (m) => m.name.toLowerCase() === item.medicine_name.toLowerCase(),
+              );
+              const unitPrice = med?.price ?? 0;
+              let qty = 1;
+              const qtyMatch = item.dosage?.match(/^(\d+)\s*[x×]/i);
+              if (qtyMatch) qty = parseInt(qtyMatch[1]) || 1;
+              return { label: item.medicine_name, qty, unit_price: unitPrice };
+            })
+            .filter((i) => i.unit_price > 0 || i.label);
+
+          const { data: invData, error: invErr } = await sb
+            .schema("app")
+            .from("invoices")
+            .insert({ patient_id: presc.patient_id, created_by: authUser.id })
+            .select("id")
+            .single();
+
+          if (!invErr && invData?.id && invoiceItems.length > 0) {
+            await sb
+              .schema("app")
+              .from("invoice_items")
+              .insert(invoiceItems.map((i) => ({ invoice_id: invData.id, ...i })));
+          }
+        } catch {
+          // Facturation non bloquante — RLS peut restreindre selon la config déployée
+        }
+      }
+
       setPrescriptions((prev) => prev.filter((p) => p.id !== presc.id));
       setMeds((prev) =>
-        prev.map((m) =>
-          (presc.items ?? []).some((it) => it.medicine_name.toLowerCase() === m.name.toLowerCase())
-            ? { ...m, stock: Math.max(0, m.stock - 1) }
-            : m,
-        ),
+        prev.map((m) => {
+          const item = (presc.items ?? []).find(
+            (it) => it.medicine_name.toLowerCase() === m.name.toLowerCase(),
+          );
+          if (!item) return m;
+          let qty = 1;
+          const qtyMatch = item.dosage?.match(/^(\d+)\s*[x×]/i);
+          if (qtyMatch) qty = parseInt(qtyMatch[1]) || 1;
+          return { ...m, stock: Math.max(0, m.stock - qty) };
+        }),
       );
-      toast.success("Prescription delivree et stock mis a jour.");
+      toast.success("Prescription délivrée, stock mis à jour et facture générée.");
     } catch (err: any) {
-      toast.error(err?.message ?? "Delivrance impossible.");
+      toast.error(err?.message ?? "Délivrance impossible.");
     }
   }
 
@@ -178,7 +223,7 @@ function PharmacienHome() {
           icon={AlertTriangle}
         />
         <StatCard
-          label="References pharmacie"
+          label="Références pharmacie"
           value={loading ? "..." : String(meds.length)}
           icon={Pill}
         />
@@ -190,7 +235,9 @@ function PharmacienHome() {
             <h3 className="text-lg font-bold text-[color:var(--navy)] flex items-center gap-2">
               <FileText className="size-5 text-[color:var(--mint)]" /> Prescriptions actives
             </h3>
-            <p className="text-sm text-muted-foreground">A delivrer puis marquer comme traitee.</p>
+            <p className="text-sm text-muted-foreground">
+              À délivrer puis marquer comme traitée. La facture est générée automatiquement.
+            </p>
           </div>
 
           <div className="mt-5 space-y-3">
@@ -202,8 +249,8 @@ function PharmacienHome() {
                       {p.patient ? `${p.patient.first_name} ${p.patient.last_name}` : "Patient"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(p.created_at).toLocaleString()} -{" "}
-                      {p.practitioner?.full_name ?? "Medecin"}
+                      {new Date(p.created_at).toLocaleString()} —{" "}
+                      {p.practitioner?.full_name ?? "Médecin"}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {(p.items ?? []).map((it) => (
@@ -212,6 +259,7 @@ function PharmacienHome() {
                           className="rounded-xl border bg-card px-3 py-1 text-xs text-[color:var(--navy)]"
                         >
                           {it.medicine_name}
+                          {it.dosage ? ` · ${it.dosage}` : ""}
                         </span>
                       ))}
                     </div>
@@ -221,7 +269,7 @@ function PharmacienHome() {
                     onClick={() => void dispensePrescription(p)}
                     className="inline-flex items-center justify-center gap-2 rounded-2xl gradient-mint px-4 py-2.5 text-sm font-semibold text-[color:var(--navy)] shrink-0"
                   >
-                    <CheckCircle2 className="size-4" /> Delivrer
+                    <CheckCircle2 className="size-4" /> Délivrer
                   </button>
                 </div>
               </div>
@@ -311,5 +359,3 @@ function PharmacienHome() {
     </DashboardLayout>
   );
 }
-
-

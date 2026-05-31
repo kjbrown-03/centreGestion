@@ -1,4 +1,4 @@
-import { createFileRoute, useRouterState } from "@tanstack/react-router";
+ï»¿import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { Calendar, Stethoscope, Users, FileText, Clock } from "lucide-react";
 import { motion } from "framer-motion";
@@ -106,8 +106,8 @@ function MedecinHome() {
 
   const [selectedConsultationId, setSelectedConsultationId] = useState<string>("");
   const [prescItems, setPrescItems] = useState<
-    { medicine_name: string; dosage: string; frequency: string; duration: string }[]
-  >([{ medicine_name: "", dosage: "", frequency: "", duration: "" }]);
+    { medicine_name: string; qty: string; dosage: string; frequency: string; duration: string }[]
+  >([{ medicine_name: "", qty: "1", dosage: "", frequency: "", duration: "" }]);
   const [creatingPrescription, setCreatingPrescription] = useState(false);
   const [medicineOptions, setMedicineOptions] = useState<string[]>([]);
 
@@ -369,7 +369,7 @@ function MedecinHome() {
         // ignore
       }
 
-      toast.success("Consultation créée.");
+      toast.success("Consultation crÃ©Ã©e.");
       setChiefComplaint("");
       setSymptoms("");
       setDiagnosis("");
@@ -377,7 +377,7 @@ function MedecinHome() {
       if (data?.id) setSelectedConsultationId(String(data.id));
       await openPatientFile(selectedAppt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Impossible de créer la consultation.");
+      toast.error(err?.message ?? "Impossible de crÃ©er la consultation.");
     } finally {
       setCreatingConsultation(false);
     }
@@ -385,8 +385,8 @@ function MedecinHome() {
 
   async function runAiSuggestion() {
     try {
-      if (!chiefComplaint && !symptoms && !notes) {
-        toast.error("Renseigne motif/symptômes/notes pour une suggestion.");
+      if (!chiefComplaint && !symptoms) {
+        toast.error("Renseigne motif/symptÃ´mes pour une suggestion.");
         return;
       }
       setAiLoading(true);
@@ -403,19 +403,24 @@ function MedecinHome() {
   async function createPrescription() {
     if (!selectedAppt?.patient?.id) return;
     if (!selectedConsultationId) {
-      toast.error("Sélectionne une consultation.");
+      toast.error("SÃ©lectionne une consultation.");
       return;
     }
     const items = prescItems
-      .map((i) => ({
-        medicine_name: i.medicine_name.trim(),
-        dosage: i.dosage.trim() || null,
-        frequency: i.frequency.trim() || null,
-        duration: i.duration.trim() || null,
-      }))
+      .map((i) => {
+        const qty = parseInt(i.qty) || 1;
+        const rawDosage = i.dosage.trim();
+        const dosageWithQty = qty > 1 ? `${qty}Ã—${rawDosage || "unitÃ©(s)"}` : (rawDosage || null);
+        return {
+          medicine_name: i.medicine_name.trim(),
+          dosage: dosageWithQty,
+          frequency: i.frequency.trim() || null,
+          duration: i.duration.trim() || null,
+        };
+      })
       .filter((i) => i.medicine_name);
     if (!items.length) {
-      toast.error("Ajoute au moins un médicament.");
+      toast.error("Ajoute au moins un mÃ©dicament.");
       return;
     }
 
@@ -444,11 +449,11 @@ function MedecinHome() {
         .insert(items.map((i) => ({ ...i, prescription_id: prescId })));
       if (iErr) throw iErr;
 
-      toast.success("Prescription créée.");
-      setPrescItems([{ medicine_name: "", dosage: "", frequency: "", duration: "" }]);
+      toast.success("Prescription crÃ©Ã©e. Le pharmacien a Ã©tÃ© notifiÃ©.");
+      setPrescItems([{ medicine_name: "", qty: "1", dosage: "", frequency: "", duration: "" }]);
       await openPatientFile(selectedAppt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Impossible de créer la prescription.");
+      toast.error(err?.message ?? "Impossible de crÃ©er la prescription.");
     } finally {
       setCreatingPrescription(false);
     }
@@ -457,7 +462,7 @@ function MedecinHome() {
   async function createExamOrder() {
     if (!selectedAppt?.patient?.id) return;
     if (!selectedConsultationId) {
-      toast.error("Sélectionne une consultation.");
+      toast.error("SÃ©lectionne une consultation.");
       return;
     }
     if (!examType.trim()) {
@@ -484,7 +489,7 @@ function MedecinHome() {
         });
       if (error) throw error;
 
-      toast.success("Examen demandé.");
+      toast.success("Examen demandÃ©.");
       setExamType("");
       setExamPriority("routine");
       setExamNotes("");
@@ -551,7 +556,7 @@ function MedecinHome() {
                 </div>
                 <span
                   className={`text-xs font-medium px-3 py-1 rounded-full ${
-                    a.status === "confirme" || a.status === "confirmé"
+                    a.status === "confirme" || a.status === "confirmÃ©"
                       ? "bg-[color:var(--mint)]/20 text-[color:var(--navy)]"
                       : "bg-amber-100 text-amber-700"
                   }`}
@@ -569,26 +574,7 @@ function MedecinHome() {
           </div>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="rounded-3xl border bg-card p-7"
-        >
-          <h3 className="text-lg font-bold text-[color:var(--navy)]">Notes rapides</h3>
-          <div className="mt-5 space-y-3">
-            {[
-              { icon: FileText, text: "Renouveler protocole d'hypertension pour A. Benani" },
-              { icon: Clock, text: "Synthèse hebdomadaire à finaliser avant 18h" },
-              { icon: FileText, text: "Compte-rendu de J. Dubois en attente" },
-            ].map((n, i) => (
-              <div key={i} className="flex gap-3 p-3 rounded-xl bg-muted/50">
-                <n.icon className="size-4 text-[color:var(--mint)] mt-0.5 shrink-0" />
-                <p className="text-sm text-[color:var(--navy)]">{n.text}</p>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+        {/* Notes rapides section retirÃ©e */}
       </div>
 
       {selectedAppt?.patient ? (
@@ -597,13 +583,13 @@ function MedecinHome() {
           onClick={() => setSelectedAppt(null)}
         >
           <div
-            className="w-full max-w-4xl rounded-3xl border bg-background shadow-xl"
+            className="w-full max-w-4xl max-h-[85vh] overflow-y-auto rounded-3xl border bg-background shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 border-b flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-[color:var(--navy)]">
-                  Dossier patient · {selectedAppt.patient.first_name}{" "}
+                  Dossier patient Â· {selectedAppt.patient.first_name}{" "}
                   {selectedAppt.patient.last_name}
                 </h3>
                 {selectedAppt.patient.phone ? (<a href={whatsappUrlFor(selectedAppt.patient.phone)} target="_blank" rel="noreferrer" className="text-sm text-muted-foreground hover:text-[color:var(--navy)] hover:underline">WhatsApp: {selectedAppt.patient.phone}</a>) : null}
@@ -651,7 +637,7 @@ function MedecinHome() {
                       ))
                     ) : (
                       <div className="text-sm text-muted-foreground">
-                        Aucune consultation trouvée.
+                        Aucune consultation trouvÃ©e.
                       </div>
                     )}
                   </div>
@@ -670,19 +656,19 @@ function MedecinHome() {
                               {o.exam_type}
                             </div>
                             <span className="text-xs text-muted-foreground">
-                              {new Date(o.created_at).toLocaleDateString()} · {o.status}
+                              {new Date(o.created_at).toLocaleDateString()} Â· {o.status}
                             </span>
                           </div>
                           <div className="mt-2 text-sm text-muted-foreground">
-                            Priorité: {o.priority}
+                            PrioritÃ©: {o.priority}
                           </div>
                           {o.result?.result_summary ? (
                             <div className="mt-2 text-sm text-[color:var(--navy)]">
-                              Résultat: {o.result.result_summary}
+                              RÃ©sultat: {o.result.result_summary}
                             </div>
                           ) : (
                             <div className="mt-2 text-sm text-muted-foreground">
-                              Résultat non disponible.
+                              RÃ©sultat non disponible.
                             </div>
                           )}
                         </div>
@@ -713,9 +699,9 @@ function MedecinHome() {
                             {(p.items ?? []).slice(0, 5).map((it) => (
                               <div key={it.id} className="text-sm text-muted-foreground">
                                 {it.medicine_name}
-                                {it.dosage ? ` · ${it.dosage}` : ""}
-                                {it.frequency ? ` · ${it.frequency}` : ""}
-                                {it.duration ? ` · ${it.duration}` : ""}
+                                {it.dosage ? ` Â· ${it.dosage}` : ""}
+                                {it.frequency ? ` Â· ${it.frequency}` : ""}
+                                {it.duration ? ` Â· ${it.duration}` : ""}
                               </div>
                             ))}
                           </div>
@@ -752,12 +738,7 @@ function MedecinHome() {
                         placeholder="Diagnostic"
                         className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
                       />
-                      <textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        placeholder="Notes"
-                        className="w-full min-h-20 rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
-                      />
+                      {/* Champ Notes retirÃ© */}
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -765,7 +746,7 @@ function MedecinHome() {
                           disabled={aiLoading}
                           className="rounded-2xl border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
                         >
-                          Suggérer orientation
+                          SuggÃ©rer orientation
                         </button>
                         {aiSuggestion ? (
                           <span className="text-[10px] text-muted-foreground">
@@ -801,7 +782,7 @@ function MedecinHome() {
                             }
                             className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                           >
-                            <option value="">- Sélectionner un médicament -</option>
+                            <option value="">â€” SÃ©lectionner un mÃ©dicament â€”</option>
                             {medicineOptions.map((n) => (
                               <option key={n} value={n}>
                                 {n}
@@ -809,6 +790,20 @@ function MedecinHome() {
                             ))}
                           </select>
                           <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={it.qty}
+                              onChange={(e) =>
+                                setPrescItems((prev) =>
+                                  prev.map((p, i) =>
+                                    i === idx ? { ...p, qty: e.target.value } : p,
+                                  ),
+                                )
+                              }
+                              placeholder="QtÃ©"
+                              className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
+                            />
                             <input
                               value={it.dosage}
                               onChange={(e) =>
@@ -818,7 +813,7 @@ function MedecinHome() {
                                   ),
                                 )
                               }
-                              placeholder="Dosage"
+                              placeholder="Dosage (ex: 500mg)"
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                             />
                             <input
@@ -830,7 +825,7 @@ function MedecinHome() {
                                   ),
                                 )
                               }
-                              placeholder="Fréquence"
+                              placeholder="FrÃ©quence"
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                             />
                             <input
@@ -842,8 +837,8 @@ function MedecinHome() {
                                   ),
                                 )
                               }
-                              placeholder="Durée"
-                              className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none col-span-2"
+                              placeholder="DurÃ©e"
+                              className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                             />
                           </div>
                           <button
@@ -863,12 +858,12 @@ function MedecinHome() {
                         onClick={() =>
                           setPrescItems((p) => [
                             ...p,
-                            { medicine_name: "", dosage: "", frequency: "", duration: "" },
+                            { medicine_name: "", qty: "1", dosage: "", frequency: "", duration: "" },
                           ])
                         }
                         className="w-full rounded-2xl border py-2.5 text-sm hover:bg-muted"
                       >
-                        Ajouter un médicament
+                        + Ajouter un mÃ©dicament
                       </button>
                       <button
                         type="button"
@@ -887,7 +882,7 @@ function MedecinHome() {
                       <input
                         value={examType}
                         onChange={(e) => setExamType(e.target.value)}
-                        placeholder="Type (ex: NFS, Glycémie, Radio...)"
+                        placeholder="Type (ex: NFS, GlycÃ©mie, Radio...)"
                         className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
                       />
                       <div className="grid grid-cols-2 gap-2">
@@ -906,12 +901,7 @@ function MedecinHome() {
                           Urgent
                         </button>
                       </div>
-                      <textarea
-                        value={examNotes}
-                        onChange={(e) => setExamNotes(e.target.value)}
-                        placeholder="Notes / indications"
-                        className="w-full min-h-16 rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
-                      />
+                      {/* Champ Notes/indications retirÃ© */}
                       <button
                         type="button"
                         onClick={() => void createExamOrder()}

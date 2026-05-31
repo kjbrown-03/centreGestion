@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+ï»¿import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
 import { Users, Calendar, Activity, TrendingUp } from "lucide-react";
 import { motion } from "framer-motion";
@@ -148,12 +148,12 @@ function DirecteurHome() {
         animate={{ opacity: 1, y: 0 }}
         className="mt-8 rounded-3xl border bg-card p-7"
       >
-        <h3 className="text-lg font-bold text-[color:var(--navy)]">Indicateurs clés</h3>
-        <p className="mt-2 text-sm text-muted-foreground">Vue synthétique.</p>
+        <h3 className="text-lg font-bold text-[color:var(--navy)]">Indicateurs clÃ©s</h3>
+        <p className="mt-2 text-sm text-muted-foreground">Vue synthÃ©tique.</p>
         <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[
             { k: "Patients uniques (jour)", v: loading ? "..." : String(uniquePatients) },
-            { k: "RDV planifiés", v: loading ? "..." : String(apptCount) },
+            { k: "RDV planifiÃ©s", v: loading ? "..." : String(apptCount) },
             { k: "Encaissements (mois)", v: loading ? "..." : fmt(monthRevenue) },
           ].map((x) => (
             <div key={x.k} className="rounded-2xl border p-5 bg-muted/10">

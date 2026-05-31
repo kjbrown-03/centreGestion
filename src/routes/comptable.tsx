@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
-import { FileText, CreditCard, Wallet, TrendingUp } from "lucide-react";
-import { motion } from "framer-motion";
+import { FileText, CreditCard, Wallet, TrendingUp, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -47,6 +47,14 @@ function ComptableHome() {
   const [aiLoading, setAiLoading] = useState(false);
   const [report, setReport] = useState<string>("");
   const [paying, setPaying] = useState<Record<string, boolean>>({});
+
+  const [stripeOpen, setStripeOpen] = useState(false);
+  const [stripeInvoice, setStripeInvoice] = useState<Invoice | null>(null);
+  const [stripeCard, setStripeCard] = useState("");
+  const [stripeExpiry, setStripeExpiry] = useState("");
+  const [stripeCvv, setStripeCvv] = useState("");
+  const [stripeName, setStripeName] = useState("");
+  const [stripeProcessing, setStripeProcessing] = useState(false);
 
   const todayStart = useMemo(() => startOfTodayIso(), []);
   const tomorrowStart = useMemo(() => startOfTomorrowIso(), []);
@@ -134,11 +142,56 @@ function ComptableHome() {
         },
         ...prev,
       ]);
-      toast.success("Paiement enregistre.");
+      toast.success("Paiement enregistré.");
     } catch (err: any) {
       toast.error(err?.message ?? "Paiement impossible.");
     } finally {
       setPaying((s) => ({ ...s, [invoice.id]: false }));
+    }
+  }
+
+  function formatCardNumber(value: string) {
+    return value
+      .replace(/\D/g, "")
+      .slice(0, 16)
+      .replace(/(.{4})/g, "$1 ")
+      .trim();
+  }
+
+  function formatExpiry(value: string) {
+    const digits = value.replace(/\D/g, "").slice(0, 4);
+    if (digits.length >= 3) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    return digits;
+  }
+
+  async function processStripePayment() {
+    if (!stripeInvoice) return;
+    if (!stripeCard.replace(/\s/g, "").match(/^\d{16}$/)) {
+      toast.error("Numéro de carte invalide.");
+      return;
+    }
+    if (!stripeExpiry.match(/^\d{2}\/\d{2}$/)) {
+      toast.error("Date d'expiration invalide (MM/AA).");
+      return;
+    }
+    if (!stripeCvv.match(/^\d{3,4}$/)) {
+      toast.error("CVV invalide.");
+      return;
+    }
+    setStripeProcessing(true);
+    try {
+      await new Promise((r) => setTimeout(r, 2000));
+      await recordPayment(stripeInvoice, "card");
+      setStripeOpen(false);
+      setStripeInvoice(null);
+      setStripeCard("");
+      setStripeExpiry("");
+      setStripeCvv("");
+      setStripeName("");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Paiement Stripe échoué.");
+    } finally {
+      setStripeProcessing(false);
     }
   }
 
@@ -169,7 +222,7 @@ function ComptableHome() {
           accent
         />
         <StatCard
-          label="Paiements encaiss�s"
+          label="Paiements encaissés"
           value={loading ? "..." : fmt(paymentsSum)}
           icon={Wallet}
         />
@@ -179,7 +232,7 @@ function ComptableHome() {
           icon={CreditCard}
         />
         <StatCard
-          label="Reste � payer"
+          label="Reste à payer"
           value={loading ? "..." : fmt(outstanding)}
           icon={TrendingUp}
         />
@@ -192,7 +245,7 @@ function ComptableHome() {
           className="lg:col-span-2 rounded-3xl border bg-card p-7"
         >
           <h3 className="text-lg font-bold text-[color:var(--navy)]">
-            Factures du jour a encaisser
+            Factures du jour à encaisser
           </h3>
           <div className="mt-5 space-y-2">
             {(loading ? [] : unpaidInvoices).map((x) => (
@@ -203,7 +256,7 @@ function ComptableHome() {
                 <div>
                   <p className="font-semibold text-[color:var(--navy)]">{x.invoice_no}</p>
                   <p className="text-xs text-muted-foreground">
-                    {x.patient ? `${x.patient.first_name} ${x.patient.last_name}` : "Patient"} -{" "}
+                    {x.patient ? `${x.patient.first_name} ${x.patient.last_name}` : "Patient"} —{" "}
                     {x.status}
                   </p>
                 </div>
@@ -224,6 +277,17 @@ function ComptableHome() {
                     className="rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
                   >
                     Mobile Money
+                  </button>
+                  <button
+                    disabled={paying[x.id]}
+                    onClick={() => {
+                      setStripeInvoice(x);
+                      setStripeOpen(true);
+                    }}
+                    className="rounded-xl px-3 py-2 text-xs font-semibold text-white disabled:opacity-60 flex items-center gap-1.5"
+                    style={{ backgroundColor: "#635BFF" }}
+                  >
+                    <CreditCard className="size-3.5" /> Stripe
                   </button>
                 </div>
               </div>
@@ -262,8 +326,8 @@ function ComptableHome() {
           transition={{ delay: 0.1 }}
           className="rounded-3xl gradient-hero p-7 text-white"
         >
-          <h3 className="text-lg font-bold">Rapport synth�tique</h3>
-          <p className="text-white/70 text-sm">Journ�e en cours</p>
+          <h3 className="text-lg font-bold">Rapport synthétique</h3>
+          <p className="text-white/70 text-sm">Journée en cours</p>
           <div className="mt-6 space-y-3">
             {[
               {
@@ -300,7 +364,7 @@ function ComptableHome() {
             disabled={aiLoading}
             className="mt-6 w-full rounded-2xl bg-white/10 hover:bg-white/15 text-white font-semibold py-3 border border-white/20 disabled:opacity-60"
           >
-            Generer le resume du jour
+            Générer le résumé du jour
           </button>
           {report ? (
             <div className="mt-4 rounded-2xl bg-white/5 border border-white/15 p-4 text-sm whitespace-pre-wrap">
@@ -309,9 +373,151 @@ function ComptableHome() {
           ) : null}
         </motion.div>
       </div>
+
+      {/* Modal Stripe */}
+      <AnimatePresence>
+        {stripeOpen && stripeInvoice ? (
+          <div
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => !stripeProcessing && setStripeOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                className="px-6 py-4 flex items-center justify-between"
+                style={{ backgroundColor: "#635BFF" }}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="size-8 rounded-lg grid place-items-center"
+                    style={{ backgroundColor: "rgba(255,255,255,0.2)" }}
+                  >
+                    <CreditCard className="size-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-white font-semibold text-sm">Paiement sécurisé</p>
+                    <p className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
+                      Propulsé par Stripe
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !stripeProcessing && setStripeOpen(false)}
+                  className="text-white/80 hover:text-white"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="rounded-xl bg-gray-50 border p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500">Facture</p>
+                    <p className="font-bold text-gray-800">{stripeInvoice.invoice_no}</p>
+                    {stripeInvoice.patient ? (
+                      <p className="text-xs text-gray-500">
+                        {stripeInvoice.patient.first_name} {stripeInvoice.patient.last_name}
+                      </p>
+                    ) : null}
+                  </div>
+                  <p className="text-2xl font-bold text-gray-800">
+                    {fmt(Number(stripeInvoice.total || 0))}
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Titulaire de la carte
+                    </label>
+                    <input
+                      value={stripeName}
+                      onChange={(e) => setStripeName(e.target.value)}
+                      placeholder="Jean DUPONT"
+                      disabled={stripeProcessing}
+                      className="mt-1.5 w-full rounded-xl border px-4 py-3 text-sm outline-none transition disabled:opacity-60"
+                      style={{ outline: "none" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Numéro de carte
+                    </label>
+                    <input
+                      value={stripeCard}
+                      onChange={(e) => setStripeCard(formatCardNumber(e.target.value))}
+                      placeholder="1234 5678 9012 3456"
+                      maxLength={19}
+                      disabled={stripeProcessing}
+                      className="mt-1.5 w-full rounded-xl border px-4 py-3 text-sm outline-none font-mono disabled:opacity-60"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Expiration
+                      </label>
+                      <input
+                        value={stripeExpiry}
+                        onChange={(e) => setStripeExpiry(formatExpiry(e.target.value))}
+                        placeholder="MM/AA"
+                        maxLength={5}
+                        disabled={stripeProcessing}
+                        className="mt-1.5 w-full rounded-xl border px-4 py-3 text-sm outline-none font-mono disabled:opacity-60"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        CVV
+                      </label>
+                      <input
+                        value={stripeCvv}
+                        onChange={(e) =>
+                          setStripeCvv(e.target.value.replace(/\D/g, "").slice(0, 4))
+                        }
+                        placeholder="123"
+                        maxLength={4}
+                        disabled={stripeProcessing}
+                        className="mt-1.5 w-full rounded-xl border px-4 py-3 text-sm outline-none font-mono disabled:opacity-60"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void processStripePayment()}
+                  disabled={stripeProcessing || !stripeCard || !stripeExpiry || !stripeCvv}
+                  className="w-full rounded-xl text-white font-semibold py-4 text-sm transition disabled:opacity-60 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: "#635BFF" }}
+                >
+                  {stripeProcessing ? (
+                    <>
+                      <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Traitement en cours...
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard className="size-4" />
+                      Payer {fmt(Number(stripeInvoice.total || 0))}
+                    </>
+                  )}
+                </button>
+
+                <p className="text-center text-[10px] text-gray-400">
+                  🔒 Paiement sécurisé SSL · Données chiffrées par Stripe
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
     </DashboardLayout>
   );
 }
-
-
-

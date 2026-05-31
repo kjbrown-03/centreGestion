@@ -302,12 +302,19 @@ Deno.serve(async (req: Request) => {
     if (op === "delete_user") {
       const userId = (body.user_id ?? "").trim();
       if (!userId) return json(400, { error: "Missing user_id" });
-      try {
-        await (adminClient as any).schema("app").from("patient_accounts").delete().eq("user_id", userId);
-        await (adminClient as any).schema("app").from("profiles").delete().eq("user_id", userId);
-      } catch {}
+
+      // Appel de la fonction de nettoyage (gère tous les FK NOT NULL)
+      const { error: cleanupErr } = await adminClient.rpc("delete_user_cascade", { p_user_id: userId });
+      if (cleanupErr) {
+        // Fallback manuel si la fonction n'est pas encore déployée
+        try {
+          await (adminClient as any).schema("app").from("patient_accounts").delete().eq("user_id", userId);
+          await (adminClient as any).schema("app").from("profiles").delete().eq("user_id", userId);
+        } catch { /* ignore */ }
+      }
+
       const { error } = await adminClient.auth.admin.deleteUser(userId);
-      if (error) return json(400, { error: error.message });
+      if (error) return json(400, { error: `Database error deleting user: ${error.message}` });
       return json(200, { ok: true });
     }
 

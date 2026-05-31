@@ -1,4 +1,4 @@
-import { Reveal } from "./Reveal";
+﻿import { Reveal } from "./Reveal";
 import { motion } from "framer-motion";
 
 const team = [
@@ -6,6 +6,7 @@ const team = [
   { name: "Jules Parfait", role: "Docteur", img: "/team/jules-parfait.jpeg" },
   { name: "Kaldjob Jean Baptiste", role: "Docteur", img: "/team/kaldjob-jean-baptiste.jpeg" },
   { name: "Djapp Chloe Patient", role: "Docteur", img: "/team/djapp-chloe-patient.png" },
+  { name: "Keumeni Merveille", role: "Dermatologue", img: "/team/keumeni-merveille.jpg" },
 ];
 
 export function Team() {
@@ -14,7 +15,7 @@ export function Team() {
       <div className="mx-auto max-w-7xl px-6">
         <Reveal>
           <div className="max-w-2xl">
-            <p className="text-sm font-semibold uppercase tracking-widest text-[color:var(--mint)]">Notre �quipe</p>
+            <p className="text-sm font-semibold uppercase tracking-widest text-[color:var(--mint)]">Notre équipe</p>
             <h2 className="mt-4 text-4xl sm:text-5xl font-bold text-[color:var(--navy)]">
               Des visages, des expertises, une vocation.
             </h2>

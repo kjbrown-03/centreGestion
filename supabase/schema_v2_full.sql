@@ -905,7 +905,7 @@ for insert with check (app.is_admin());
 -- stock: read pharmacien/infirmier/directeur/admin; write pharmacien/admin
 drop policy if exists stock_read_staff on app.stock_items;
 create policy stock_read_staff on app.stock_items
-for select using (app.has_any_role(array['admin','pharmacien','infirmier','directeur']::app.user_role[]));
+for select using (app.has_any_role(array['admin','pharmacien','infirmier','directeur','medecin']::app.user_role[]));
 
 drop policy if exists stock_write_admin_pharmacien on app.stock_items;
 create policy stock_write_admin_pharmacien on app.stock_items
@@ -927,11 +927,7 @@ for select using (app.has_any_role(array['admin','comptable','secretaire','direc
 
 drop policy if exists invoices_insert_finance on app.invoices;
 create policy invoices_insert_finance on app.invoices
-for insert with check (app.has_any_role(array['admin','secretaire','comptable']::app.user_role[]));
-
-drop policy if exists invoices_insert_medecin_consultation on app.invoices;
-create policy invoices_insert_medecin_consultation on app.invoices
-for insert with check (app.has_any_role(array['admin','medecin']::app.user_role[]));
+for insert with check (app.has_any_role(array['admin','secretaire','comptable','medecin','pharmacien']::app.user_role[]));
 
 drop policy if exists invoices_update_comptable on app.invoices;
 create policy invoices_update_comptable on app.invoices
@@ -967,7 +963,7 @@ for select using (
 );
 drop policy if exists invoice_items_insert_finance on app.invoice_items;
 create policy invoice_items_insert_finance on app.invoice_items
-for insert with check (app.has_any_role(array['admin','secretaire','comptable']::app.user_role[]));
+for insert with check (app.has_any_role(array['admin','secretaire','comptable','medecin','pharmacien']::app.user_role[]));
 
 drop policy if exists payments_read_finance on app.payments;
 create policy payments_read_finance on app.payments
