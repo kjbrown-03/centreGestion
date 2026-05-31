@@ -141,21 +141,29 @@ function RootComponent() {
 
   // Splash screen — à chaque chargement de page
   const [splashDone, setSplashDone] = useState(false);
-  const handleSplashDone = () => {
-    setSplashDone(true);
-    // Voix de bienvenue dès que le splash se termine
+
+  // Voix déclenchée après le splash — useEffect garantit que le DOM est stable
+  useEffect(() => {
+    if (!splashDone) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      const text = lang === "fr"
-        ? "Bienvenue dans notre application de gestion de centre de santé."
-        : "Welcome to our health centre management application.";
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
-      utterance.rate = 0.9;
-      window.speechSynthesis.speak(utterance);
-    } catch { /* ignore */ }
-  };
+    // Petit délai pour que la transition du splash soit bien terminée
+    const id = setTimeout(() => {
+      try {
+        window.speechSynthesis.cancel();
+        const text = lang === "fr"
+          ? "Bienvenue dans notre application de gestion de centre de santé."
+          : "Welcome to our health centre management application.";
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        window.speechSynthesis.speak(utterance);
+      } catch { /* ignore */ }
+    }, 200);
+    return () => clearTimeout(id);
+  }, [splashDone, lang]);
+
+  const handleSplashDone = () => setSplashDone(true);
 
   // Enregistrement du service worker (PWA installable)
   useEffect(() => {
