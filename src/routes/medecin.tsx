@@ -106,8 +106,8 @@ function MedecinHome() {
 
   const [selectedConsultationId, setSelectedConsultationId] = useState<string>("");
   const [prescItems, setPrescItems] = useState<
-    { medicine_name: string; qty: string; dosage: string; frequency: string; duration: string }[]
-  >([{ medicine_name: "", qty: "1", dosage: "", frequency: "", duration: "" }]);
+    { medicine_name: string; qty: string; frequency: string; duration: string }[]
+  >([{ medicine_name: "", qty: "1", frequency: "", duration: "" }]);
   const [creatingPrescription, setCreatingPrescription] = useState(false);
   const [medicineOptions, setMedicineOptions] = useState<string[]>([]);
 
@@ -409,13 +409,12 @@ function MedecinHome() {
     const items = prescItems
       .map((i) => {
         const qty = parseInt(i.qty) || 1;
-        const rawDosage = i.dosage.trim();
-        const dosageWithQty = qty > 1 ? `${qty}×${rawDosage || "unité(s)"}` : (rawDosage || null);
         return {
           medicine_name: i.medicine_name.trim(),
-          dosage: dosageWithQty,
-          frequency: i.frequency.trim() || null,
+          dosage: null,
+          frequency: i.frequency || null,
           duration: i.duration.trim() || null,
+          instructions: qty > 1 ? `Qté: ${qty}` : null,
         };
       })
       .filter((i) => i.medicine_name);
@@ -450,7 +449,7 @@ function MedecinHome() {
       if (iErr) throw iErr;
 
       toast.success("Prescription créée. Le pharmacien a été notifié.");
-      setPrescItems([{ medicine_name: "", qty: "1", dosage: "", frequency: "", duration: "" }]);
+      setPrescItems([{ medicine_name: "", qty: "1", frequency: "", duration: "" }]);
       await openPatientFile(selectedAppt);
     } catch (err: any) {
       toast.error(err?.message ?? "Impossible de créer la prescription.");
@@ -804,19 +803,7 @@ function MedecinHome() {
                               placeholder="Qté"
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                             />
-                            <input
-                              value={it.dosage}
-                              onChange={(e) =>
-                                setPrescItems((prev) =>
-                                  prev.map((p, i) =>
-                                    i === idx ? { ...p, dosage: e.target.value } : p,
-                                  ),
-                                )
-                              }
-                              placeholder="Dosage (ex: 500mg)"
-                              className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
-                            />
-                            <input
+                            <select
                               value={it.frequency}
                               onChange={(e) =>
                                 setPrescItems((prev) =>
@@ -825,9 +812,20 @@ function MedecinHome() {
                                   ),
                                 )
                               }
-                              placeholder="Fréquence"
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
-                            />
+                            >
+                              <option value="">— Fréquence —</option>
+                              <option value="1×/jour (matin)">1×/jour (matin)</option>
+                              <option value="2×/jour (matin & soir)">2×/jour (matin &amp; soir)</option>
+                              <option value="3×/jour (matin, midi, soir)">3×/jour (matin, midi, soir)</option>
+                              <option value="4×/jour (toutes les 6h)">4×/jour (toutes les 6h)</option>
+                              <option value="Toutes les 8h">Toutes les 8h</option>
+                              <option value="Toutes les 12h">Toutes les 12h</option>
+                              <option value="1×/semaine">1×/semaine</option>
+                              <option value="Au besoin (si douleur)">Au besoin (si douleur)</option>
+                              <option value="Le matin à jeun">Le matin à jeun</option>
+                              <option value="Le soir au coucher">Le soir au coucher</option>
+                            </select>
                             <input
                               value={it.duration}
                               onChange={(e) =>
@@ -837,8 +835,8 @@ function MedecinHome() {
                                   ),
                                 )
                               }
-                              placeholder="Durée"
-                              className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
+                              placeholder="Durée (ex: 7 jours)"
+                              className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none col-span-2"
                             />
                           </div>
                           <button
@@ -858,7 +856,7 @@ function MedecinHome() {
                         onClick={() =>
                           setPrescItems((p) => [
                             ...p,
-                            { medicine_name: "", qty: "1", dosage: "", frequency: "", duration: "" },
+                            { medicine_name: "", qty: "1", frequency: "", duration: "" },
                           ])
                         }
                         className="w-full rounded-2xl border py-2.5 text-sm hover:bg-muted"

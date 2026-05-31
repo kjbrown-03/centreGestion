@@ -22,6 +22,7 @@ type Prescription = {
     dosage: string | null;
     frequency: string | null;
     duration: string | null;
+    instructions: string | null;
   }>;
 };
 
@@ -54,7 +55,7 @@ function PharmacienHome() {
             .schema("app")
             .from("prescriptions")
             .select(
-              "id, patient_id, created_at, status, patient:patient_id(first_name,last_name), practitioner:practitioner_id(full_name), items:prescription_items(id, medicine_name, dosage, frequency, duration)",
+              "id, patient_id, created_at, status, patient:patient_id(first_name,last_name), practitioner:practitioner_id(full_name), items:prescription_items(id, medicine_name, dosage, frequency, duration, instructions)",
             )
             .eq("status", "active")
             .order("created_at", { ascending: false })
@@ -122,10 +123,12 @@ function PharmacienHome() {
       for (const item of presc.items ?? []) {
         const med = meds.find((m) => m.name.toLowerCase() === item.medicine_name.toLowerCase());
         if (!med) continue;
-        // Parse quantity from dosage prefix like "2×500mg" or "2x500mg"
+        // Parse quantity from instructions ("Qté: 2") ou dosage legacy ("2×...")
         let qty = 1;
-        const qtyMatch = item.dosage?.match(/^(\d+)\s*[x×]/i);
-        if (qtyMatch) qty = parseInt(qtyMatch[1]) || 1;
+        const qtyFromInstr = item.instructions?.match(/Qté:\s*(\d+)/i);
+        const qtyFromDosage = item.dosage?.match(/^(\d+)\s*[x×]/i);
+        if (qtyFromInstr) qty = parseInt(qtyFromInstr[1]) || 1;
+        else if (qtyFromDosage) qty = parseInt(qtyFromDosage[1]) || 1;
 
         const nextStock = Math.max(0, med.stock - qty);
         await sb.schema("app").from("stock_items").update({ stock: nextStock }).eq("id", med.id);
@@ -151,8 +154,10 @@ function PharmacienHome() {
               );
               const unitPrice = med?.price ?? 0;
               let qty = 1;
-              const qtyMatch = item.dosage?.match(/^(\d+)\s*[x×]/i);
-              if (qtyMatch) qty = parseInt(qtyMatch[1]) || 1;
+              const qtyFromInstr2 = item.instructions?.match(/Qté:\s*(\d+)/i);
+              const qtyFromDosage2 = item.dosage?.match(/^(\d+)\s*[x×]/i);
+              if (qtyFromInstr2) qty = parseInt(qtyFromInstr2[1]) || 1;
+              else if (qtyFromDosage2) qty = parseInt(qtyFromDosage2[1]) || 1;
               return { label: item.medicine_name, qty, unit_price: unitPrice };
             })
             .filter((i) => i.unit_price > 0 || i.label);
@@ -183,8 +188,10 @@ function PharmacienHome() {
           );
           if (!item) return m;
           let qty = 1;
-          const qtyMatch = item.dosage?.match(/^(\d+)\s*[x×]/i);
-          if (qtyMatch) qty = parseInt(qtyMatch[1]) || 1;
+          const qiInstr = item.instructions?.match(/Qté:\s*(\d+)/i);
+          const qiDosage = item.dosage?.match(/^(\d+)\s*[x×]/i);
+          if (qiInstr) qty = parseInt(qiInstr[1]) || 1;
+          else if (qiDosage) qty = parseInt(qiDosage[1]) || 1;
           return { ...m, stock: Math.max(0, m.stock - qty) };
         }),
       );

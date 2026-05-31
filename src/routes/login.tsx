@@ -178,9 +178,26 @@ function Login() {
         throw ensured.error;
       }
 
-      toast.error(error.message ?? "Connexion impossible.");
+      const raw = error.message ?? "";
+      if (raw.toLowerCase().includes("invalid login credentials") || raw.toLowerCase().includes("invalid credentials")) {
+        const { attempts, lockedUntil } = recordLoginFailure(cleanEmail);
+        toast.error(
+          lockedUntil
+            ? "Trop de tentatives. Compte bloqué 5 minutes."
+            : `Identifiants incorrects. Vérifiez votre e-mail et mot de passe. Si ce compte a été créé par l'administrateur, demandez-lui de réinitialiser votre mot de passe. (${attempts}/3)`,
+        );
+      } else if (raw.toLowerCase().includes("email not confirmed")) {
+        toast.error("Votre e-mail n'est pas confirmé. Vérifiez votre boîte mail ou contactez l'administrateur.");
+      } else {
+        toast.error(raw || "Connexion impossible. Contactez l'administrateur.");
+      }
     } catch (err: any) {
-      toast.error(err?.message ?? "Connexion impossible.");
+      const msg = String(err?.message ?? "");
+      if (msg.toLowerCase().includes("invalid login credentials")) {
+        toast.error("Identifiants incorrects. Contactez l'administrateur pour réinitialiser votre mot de passe.");
+      } else {
+        toast.error(msg || "Connexion impossible.");
+      }
     } finally {
       setLoading(false);
     }

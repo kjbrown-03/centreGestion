@@ -67,15 +67,16 @@ function ComptableHome() {
         const supabase = await getSupabaseAsync();
         const sb: any = supabase;
         const [inv, pay] = await Promise.all([
+          // Toutes les factures non payées (pas de filtre date)
           sb
             .schema("app")
             .from("invoices")
             .select(
               `id, invoice_no, status, total, created_at, patient:patient_id (first_name, last_name)`,
             )
-            .gte("created_at", todayStart)
-            .lt("created_at", tomorrowStart)
-            .order("created_at", { ascending: false }),
+            .order("created_at", { ascending: false })
+            .limit(100),
+          // Paiements du jour
           sb
             .schema("app")
             .from("payments")
@@ -99,16 +100,13 @@ function ComptableHome() {
     };
   }, [todayStart, tomorrowStart]);
 
-  const invoicesCount = invoices.length;
+  const unpaidInvoices = invoices.filter((f) => f.status !== "payee");
+  const invoicesCount = unpaidInvoices.length;
   const paymentsSum = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
   const mobileMoneySum = payments
     .filter((p) => p.method === "mobile_money")
     .reduce((s, p) => s + Number(p.amount || 0), 0);
-  const outstanding = Math.max(
-    invoices.reduce((s, f) => s + Number(f.total || 0), 0) - paymentsSum,
-    0,
-  );
-  const unpaidInvoices = invoices.filter((f) => f.status !== "payee");
+  const outstanding = unpaidInvoices.reduce((s, f) => s + Number(f.total || 0), 0);
 
   async function recordPayment(
     invoice: Invoice,
@@ -180,8 +178,45 @@ function ComptableHome() {
     }
     setStripeProcessing(true);
     try {
-      await new Promise((r) => setTimeout(r, 2000));
-      await recordPayment(stripeInvoice, "card");
+      const supabase = await getSupabaseAsync();
+      const [expMonth, expYear] = stripeExpiry.split("/");
+
+      const { data, error } = await supabase.functions.invoke("stripe-charge", {
+        body: {
+          card_number: stripeCard.replace(/\s/g, ""),
+          exp_month: expMonth,
+          exp_year: `20${expYear}`,
+          cvc: stripeCvv,
+          holder_name: stripeName || undefined,
+          amount_xaf: Number(stripeInvoice.total || 0),
+          invoice_id: stripeInvoice.id,
+        },
+      });
+
+      if (error) {
+        const msg = (error as any)?.context?.json
+          ? (await (error as any).context.json().catch(() => null))?.error
+          : null;
+        throw new Error(msg ?? error.message ?? "Paiement Stripe échoué.");
+      }
+      if (!data?.ok) throw new Error(data?.error ?? "Paiement Stripe échoué.");
+
+      // Mettre à jour l'état local
+      setInvoices((prev) =>
+        prev.map((f) => (f.id === stripeInvoice.id ? { ...f, status: "payee" } : f)),
+      );
+      setPayments((prev) => [
+        {
+          id: crypto.randomUUID(),
+          amount: Number(stripeInvoice.total || 0),
+          method: "card",
+          received_at: new Date().toISOString(),
+          invoice: { invoice_no: stripeInvoice.invoice_no },
+        },
+        ...prev,
+      ]);
+
+      toast.success(`Paiement Stripe accepté ! (PI: ${data.payment_intent_id?.slice(0, 12)}...)`);
       setStripeOpen(false);
       setStripeInvoice(null);
       setStripeCard("");
@@ -216,7 +251,7 @@ function ComptableHome() {
     <DashboardLayout allow="comptable" title="Facturation & paiements">
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
-          label="Factures du jour"
+          label="Factures impayées"
           value={loading ? "..." : String(invoicesCount)}
           icon={FileText}
           accent
@@ -245,7 +280,7 @@ function ComptableHome() {
           className="lg:col-span-2 rounded-3xl border bg-card p-7"
         >
           <h3 className="text-lg font-bold text-[color:var(--navy)]">
-            Factures du jour à encaisser
+            Factures à encaisser
           </h3>
           <div className="mt-5 space-y-2">
             {(loading ? [] : unpaidInvoices).map((x) => (
@@ -256,8 +291,11 @@ function ComptableHome() {
                 <div>
                   <p className="font-semibold text-[color:var(--navy)]">{x.invoice_no}</p>
                   <p className="text-xs text-muted-foreground">
-                    {x.patient ? `${x.patient.first_name} ${x.patient.last_name}` : "Patient"} —{" "}
-                    {x.status}
+                    {x.patient ? `${x.patient.first_name} ${x.patient.last_name}` : "Patient"}
+                    {" · "}
+                    {new Date(x.created_at).toLocaleDateString("fr-FR")}
+                    {" · "}
+                    <span className="capitalize">{x.status}</span>
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
