@@ -56,8 +56,8 @@ export function DashboardLayout({
   const user = useAuth((s: { user: any }) => s.user);
   const logout = useAuth((s: { logout: () => void }) => s.logout);
   const navigate = useNavigate();
-  const path = useRouterState({ select: (s: any) => s.location.pathname });
-  const locationSearch = useRouterState({ select: (s: any) => s.location.search });
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const locationSearch = useRouterState({ select: (s) => s.location.search });
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);

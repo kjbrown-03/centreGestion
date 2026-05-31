@@ -13,7 +13,7 @@ export function Navbar() {
   const roleRoute = user ? ROLES.find((r) => r.id === user.role)?.route ?? "/login" : "/login";
   const lang = useI18n((s) => s.lang);
   const toggleLang = useI18n((s) => s.toggleLang);
-  const path = useRouterState({ select: (s: any) => s.location.pathname });
+  const path = useRouterState({ select: (s) => s.location.pathname });
   const [open, setOpen] = useState(false);
   const t = homeText[lang];
   const anchor = (id: string) => (path === "/" ? `#${id}` : `/#${id}`);

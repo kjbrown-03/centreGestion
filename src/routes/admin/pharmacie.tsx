@@ -66,7 +66,7 @@ function Pharmacie() {
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<Medicine | null>(null);
   const [open, setOpen] = useState(false);
-  const locationSearch = useRouterState({ select: (s: any) => s.location.search });
+  const locationSearch = useRouterState({ select: (s) => s.location.search });
 
   async function load() {
     setLoading(true);

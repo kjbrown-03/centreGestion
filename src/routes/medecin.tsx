@@ -127,7 +127,7 @@ function MedecinHome() {
   }, [appointments]);
 
   // Track ?q= from router to filter agenda
-  const locationSearch = useRouterState({ select: (s: any) => s.location.search });
+  const locationSearch = useRouterState({ select: (s) => s.location.search });
   useEffect(() => {
     try {
       const params = new URLSearchParams(locationSearch ?? "");

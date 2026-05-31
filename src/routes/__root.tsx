@@ -136,7 +136,7 @@ function RootComponent() {
   const auditAdd = useAuditLog((s: { add: (e: any) => void }) => s.add);
   const lang = useI18n((s) => s.lang);
   const router = useRouter();
-  const pathname = useRouterState({ select: (s: any) => s.location.pathname });
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const homeVoiceKeyRef = useRef<string | null>(null);
 
   // Enregistrement du service worker (PWA installable)
