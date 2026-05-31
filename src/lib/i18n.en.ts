@@ -299,6 +299,8 @@ export const enDict: Record<string, string> = {
   "Session introuvable.": "Session not found.",
   "Prescription délivrée, stock mis à jour et facture générée.": "Prescription dispensed, stock updated and invoice generated.",
   "Délivrance impossible.": "Dispensing failed.",
+  "Facture non créée : ": "Invoice not created: ",
+  "Facture {no} créée — visible chez le comptable.": "Invoice {no} created — visible in accountant dashboard.",
   "Pharmacie & délivrance": "Pharmacy & dispensing",
   "Prescriptions actives": "Active prescriptions",
   "Alertes stock": "Stock alerts",

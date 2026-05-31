@@ -147,39 +147,41 @@ function PharmacienHome() {
           });
       }
 
-      // Auto-create invoice for the dispensed medicines
+      // Création de la facture — obligatoire pour le comptable
       if (presc.patient_id) {
-        try {
-          const invoiceItems = (presc.items ?? [])
-            .map((item) => {
-              const med = meds.find(
-                (m) => m.name.toLowerCase() === item.medicine_name.toLowerCase(),
-              );
-              const unitPrice = med?.price ?? 0;
-              let qty = 1;
-              const qtyFromInstr2 = item.instructions?.match(/Qté:\s*(\d+)/i);
-              const qtyFromDosage2 = item.dosage?.match(/^(\d+)\s*[x×]/i);
-              if (qtyFromInstr2) qty = parseInt(qtyFromInstr2[1]) || 1;
-              else if (qtyFromDosage2) qty = parseInt(qtyFromDosage2[1]) || 1;
-              return { label: item.medicine_name, qty, unit_price: unitPrice };
-            })
-            .filter((i) => i.unit_price > 0 || i.label);
+        const invoiceItems = (presc.items ?? [])
+          .map((item) => {
+            const med = meds.find(
+              (m) => m.name.toLowerCase() === item.medicine_name.toLowerCase(),
+            );
+            const unitPrice = med?.price ?? 0;
+            let qty = 1;
+            const qtyFromInstr2 = item.instructions?.match(/Qté:\s*(\d+)/i);
+            const qtyFromDosage2 = item.dosage?.match(/^(\d+)\s*[x×]/i);
+            if (qtyFromInstr2) qty = parseInt(qtyFromInstr2[1]) || 1;
+            else if (qtyFromDosage2) qty = parseInt(qtyFromDosage2[1]) || 1;
+            return { label: item.medicine_name, qty, unit_price: unitPrice };
+          })
+          .filter((i) => i.label);
 
-          const { data: invData, error: invErr } = await sb
-            .schema("app")
-            .from("invoices")
-            .insert({ patient_id: presc.patient_id, created_by: authUser.id })
-            .select("id")
-            .single();
+        const { data: invData, error: invErr } = await sb
+          .schema("app")
+          .from("invoices")
+          .insert({ patient_id: presc.patient_id, created_by: authUser.id })
+          .select("id, invoice_no")
+          .single();
 
-          if (!invErr && invData?.id && invoiceItems.length > 0) {
+        if (invErr) {
+          // Erreur visible — ne pas avaler silencieusement
+          toast.error(t("Facture non créée : ") + (invErr.message ?? "erreur RLS"));
+        } else if (invData?.id) {
+          if (invoiceItems.length > 0) {
             await sb
               .schema("app")
               .from("invoice_items")
               .insert(invoiceItems.map((i) => ({ invoice_id: invData.id, ...i })));
           }
-        } catch {
-          // Facturation non bloquante — RLS peut restreindre selon la config déployée
+          toast.success(t("Facture {no} créée — visible chez le comptable.", { no: invData.invoice_no ?? "" }));
         }
       }
 

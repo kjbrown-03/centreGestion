@@ -120,8 +120,8 @@ function ComptableHome() {
         .subscribe();
     });
 
-    // Polling toutes les 15s en cas d'échec de realtime
-    const pollId = setInterval(() => { if (alive) void load(); }, 15000);
+    // Polling toutes les 8s — garantit la mise à jour même sans realtime
+    const pollId = setInterval(() => { if (alive) void load(); }, 8000);
 
     return () => {
       alive = false;

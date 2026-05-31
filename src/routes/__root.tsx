@@ -8,7 +8,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
 
 import { useAuth, useAuditLog } from "@/lib/store";
@@ -141,29 +141,34 @@ function RootComponent() {
 
   // Splash screen — à chaque chargement de page
   const [splashDone, setSplashDone] = useState(false);
+  // Ref pour capturer la langue au moment du splash sans créer de dépendance réactive
+  const langAtSplash = useRef(lang);
 
-  // Voix déclenchée après le splash — useEffect garantit que le DOM est stable
+  // Voix déclenchée UNE SEULE FOIS quand splashDone passe à true
+  // lang n'est PAS dans les deps → ne se redéclenche pas au changement de langue
   useEffect(() => {
     if (!splashDone) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    // Petit délai pour que la transition du splash soit bien terminée
     const id = setTimeout(() => {
       try {
+        const l = langAtSplash.current;
         window.speechSynthesis.cancel();
-        const text = lang === "fr"
+        const text = l === "fr"
           ? "Bienvenue dans notre application de gestion de centre de santé."
           : "Welcome to our health centre management application.";
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
+        utterance.lang = l === "fr" ? "fr-FR" : "en-US";
         utterance.rate = 0.9;
-        utterance.pitch = 1;
         window.speechSynthesis.speak(utterance);
       } catch { /* ignore */ }
     }, 200);
     return () => clearTimeout(id);
-  }, [splashDone, lang]);
+  }, [splashDone]); // ← lang ABSENT intentionnellement
 
-  const handleSplashDone = () => setSplashDone(true);
+  const handleSplashDone = () => {
+    langAtSplash.current = lang; // capture la langue courante une seule fois
+    setSplashDone(true);
+  };
 
   // Enregistrement du service worker (PWA installable)
   useEffect(() => {
