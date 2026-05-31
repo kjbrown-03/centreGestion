@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DashboardLayout, StatCard } from "@/components/dashboard/DashboardLayout";
-import { FileText, CreditCard, Wallet, TrendingUp, X } from "lucide-react";
+import { FileText, CreditCard, Wallet, TrendingUp, X, Download, Bell } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { toast } from "sonner";
 import { financeDailySummary } from "@/lib/ai";
+import { useT } from "@/lib/i18n";
+import { formatFcfa } from "@/lib/currency";
 
 export const Route = createFileRoute("/comptable")({ component: ComptableHome });
 
@@ -37,16 +39,18 @@ type Payment = {
 };
 
 function fmt(x: number) {
-  return new Intl.NumberFormat("fr-FR").format(x) + " XAF";
+  return formatFcfa(x);
 }
 
 function ComptableHome() {
+  const t = useT();
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [report, setReport] = useState<string>("");
   const [paying, setPaying] = useState<Record<string, boolean>>({});
+  const [creatingDemo, setCreatingDemo] = useState(false);
 
   const [stripeOpen, setStripeOpen] = useState(false);
   const [stripeInvoice, setStripeInvoice] = useState<Invoice | null>(null);
@@ -55,13 +59,14 @@ function ComptableHome() {
   const [stripeCvv, setStripeCvv] = useState("");
   const [stripeName, setStripeName] = useState("");
   const [stripeProcessing, setStripeProcessing] = useState(false);
+  const [hasNew, setHasNew] = useState(false);
 
   const todayStart = useMemo(() => startOfTodayIso(), []);
   const tomorrowStart = useMemo(() => startOfTomorrowIso(), []);
 
   useEffect(() => {
     let alive = true;
-    (async () => {
+    async function load() {
       setLoading(true);
       try {
         const supabase = await getSupabaseAsync();
@@ -94,9 +99,34 @@ function ComptableHome() {
       } finally {
         if (alive) setLoading(false);
       }
-    })();
+    }
+    void load();
+    // Realtime notifications for new invoices/payments
+    void getSupabaseAsync().then((supabase) => {
+      if (!alive) return;
+      const channel = supabase
+        .channel(`finance_${Date.now()}`)
+        .on("postgres_changes", { event: "INSERT", schema: "app", table: "invoices" }, (payload) => {
+          const row: any = payload?.new ?? {};
+          if (row && row.status !== "payee") setHasNew(true);
+          void load();
+        })
+        .on("postgres_changes", { event: "INSERT", schema: "app", table: "payments" }, () => {
+          void load();
+        })
+        .subscribe();
+      // cleanup
+      (supabase as any)._financeChannel = channel;
+    });
     return () => {
       alive = false;
+      try {
+        const supabase = (window as any)?.supabase;
+        const ch = (supabase as any)?._financeChannel;
+        if (ch && supabase?.removeChannel) supabase.removeChannel(ch);
+      } catch {
+        // ignore
+      }
     };
   }, [todayStart, tomorrowStart]);
 
@@ -125,6 +155,7 @@ function ComptableHome() {
           invoice_id: invoice.id,
           method,
           amount,
+          currency: "FCFA",
           received_by: authUser?.id ?? null,
         });
       if (error) throw error;
@@ -140,9 +171,9 @@ function ComptableHome() {
         },
         ...prev,
       ]);
-      toast.success("Paiement enregistré.");
+      toast.success(t("Paiement enregistré."));
     } catch (err: any) {
-      toast.error(err?.message ?? "Paiement impossible.");
+      toast.error(err?.message ?? t("Paiement impossible."));
     } finally {
       setPaying((s) => ({ ...s, [invoice.id]: false }));
     }
@@ -165,15 +196,15 @@ function ComptableHome() {
   async function processStripePayment() {
     if (!stripeInvoice) return;
     if (!stripeCard.replace(/\s/g, "").match(/^\d{16}$/)) {
-      toast.error("Numéro de carte invalide.");
+      toast.error(t("Numéro de carte invalide."));
       return;
     }
     if (!stripeExpiry.match(/^\d{2}\/\d{2}$/)) {
-      toast.error("Date d'expiration invalide (MM/AA).");
+      toast.error(t("Date d'expiration invalide (MM/AA)."));
       return;
     }
     if (!stripeCvv.match(/^\d{3,4}$/)) {
-      toast.error("CVV invalide.");
+      toast.error(t("CVV invalide."));
       return;
     }
     setStripeProcessing(true);
@@ -197,9 +228,9 @@ function ComptableHome() {
         const msg = (error as any)?.context?.json
           ? (await (error as any).context.json().catch(() => null))?.error
           : null;
-        throw new Error(msg ?? error.message ?? "Paiement Stripe échoué.");
+        throw new Error(msg ?? error.message ?? t("Paiement Stripe échoué."));
       }
-      if (!data?.ok) throw new Error(data?.error ?? "Paiement Stripe échoué.");
+      if (!data?.ok) throw new Error(data?.error ?? t("Paiement Stripe échoué."));
 
       // Mettre à jour l'état local
       setInvoices((prev) =>
@@ -216,7 +247,7 @@ function ComptableHome() {
         ...prev,
       ]);
 
-      toast.success(`Paiement Stripe accepté ! (PI: ${data.payment_intent_id?.slice(0, 12)}...)`);
+      toast.success(t("Paiement Stripe accepté ! (PI: {pi}...)", { pi: data.payment_intent_id?.slice(0, 12) ?? "" }));
       setStripeOpen(false);
       setStripeInvoice(null);
       setStripeCard("");
@@ -224,7 +255,7 @@ function ComptableHome() {
       setStripeCvv("");
       setStripeName("");
     } catch (err: any) {
-      toast.error(err?.message ?? "Paiement Stripe échoué.");
+      toast.error(err?.message ?? t("Paiement Stripe échoué."));
     } finally {
       setStripeProcessing(false);
     }
@@ -241,33 +272,165 @@ function ComptableHome() {
       });
       setReport(txt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Service indisponible.");
+      toast.error(err?.message ?? t("Service indisponible."));
     } finally {
       setAiLoading(false);
     }
   }
 
+  async function downloadInvoicePdf(invoice: Invoice) {
+    const patientName = invoice.patient
+      ? `${invoice.patient.first_name} ${invoice.patient.last_name}`
+      : "Patient";
+    const dateStr = new Date(invoice.created_at).toLocaleDateString("fr-FR");
+    const statusLabel =
+      invoice.status === "payee" ? "Payée ✓" : invoice.status === "emise" ? "Émise" : invoice.status;
+    const amount = fmt(Number(invoice.total || 0));
+
+    const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Facture ${invoice.invoice_no} — Centre 2KC</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1e293b;padding:40px 32px;max-width:740px;margin:0 auto}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:24px;border-bottom:2px solid #e2e8f0}
+  .brand-icon{width:42px;height:42px;background:linear-gradient(135deg,#a8f0c8,#6ee7b7);border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;color:#1e3a5f;margin-right:12px;vertical-align:middle}
+  .brand-name{font-size:22px;font-weight:800;color:#1e3a5f;vertical-align:middle}
+  .brand-sub{font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:#64748b;margin-top:4px}
+  .brand-addr{font-size:11px;color:#94a3b8;margin-top:2px}
+  .meta{text-align:right}
+  .invoice-num{font-size:20px;font-weight:800;color:#1e3a5f}
+  .status-badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px;background:${invoice.status==="payee"?"#d1fae5":"#fef3c7"};color:${invoice.status==="payee"?"#10b981":"#f59e0b"}}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:28px 0;padding:20px;background:#f8fafc;border-radius:12px}
+  .info-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;font-weight:600}
+  .info-value{font-size:15px;font-weight:600;color:#1e3a5f;margin-top:3px}
+  .footer{margin-top:48px;padding-top:18px;border-top:1px solid #e2e8f0;text-align:center;font-size:11px;color:#94a3b8;line-height:1.6}
+  @media print{body{padding:16px}@page{margin:1cm;size:A4 portrait}}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <span class="brand-icon">2KC</span>
+      <span class="brand-name">2KC</span>
+      <div class="brand-sub">Centre de Santé Pluridisciplinaire</div>
+      <div class="brand-addr">Douala, Cameroun · +237 693 904 197</div>
+    </div>
+    <div class="meta">
+      <div class="invoice-num">${invoice.invoice_no}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:4px">Émise le ${dateStr}</div>
+      <div><span class="status-badge">${statusLabel}</span></div>
+    </div>
+  </div>
+  <div class="info-grid">
+    <div>
+      <div class="info-label">Facturé à</div>
+      <div class="info-value">${patientName}</div>
+    </div>
+    <div style="text-align:right">
+      <div class="info-label">Montant total</div>
+      <div class="info-value" style="font-size:20px;color:${invoice.status==="payee"?"#10b981":"#f59e0b"}">${amount}</div>
+    </div>
+  </div>
+  <div class="footer">
+    <p>Centre de Santé 2KC · Douala, Cameroun · +237 693 904 197</p>
+    <p>Statut : ${statusLabel} · Document généré le ${new Date().toLocaleDateString("fr-FR")}</p>
+  </div>
+  <script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);})</script>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (!win) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Facture_${invoice.invoice_no}_2KC.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+  }
+
+  async function createDemoInvoice() {
+    setCreatingDemo(true);
+    try {
+      const supabase = await getSupabaseAsync();
+      const authUser = (await supabase.auth.getUser()).data.user;
+      const sb: any = supabase;
+
+      const { data: patient, error: patientErr } = await sb
+        .schema("app")
+        .from("patients")
+        .select("id, first_name, last_name")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .single();
+      if (patientErr) throw patientErr;
+
+      const { data: invoice, error: invoiceErr } = await sb
+        .schema("app")
+        .from("invoices")
+        .insert({
+          patient_id: patient.id,
+          created_by: authUser?.id ?? null,
+          currency: "FCFA",
+        })
+        .select("id, invoice_no, status, total, created_at")
+        .single();
+      if (invoiceErr) throw invoiceErr;
+
+      const { error: itemErr } = await sb.schema("app").from("invoice_items").insert({
+        invoice_id: invoice.id,
+        label: "Consultation generale",
+        qty: 1,
+        unit_price: 5000,
+      });
+      if (itemErr) throw itemErr;
+
+      const created: Invoice = {
+        id: invoice.id,
+        invoice_no: invoice.invoice_no,
+        status: invoice.status ?? "emise",
+        total: 5000,
+        created_at: invoice.created_at ?? new Date().toISOString(),
+        patient: { first_name: patient.first_name, last_name: patient.last_name },
+      };
+      setInvoices((prev) => [created, ...prev]);
+      toast.success(t("Facture de test creee en FCFA."));
+    } catch (err: any) {
+      toast.error(err?.message ?? t("Creation de facture impossible."));
+    } finally {
+      setCreatingDemo(false);
+    }
+  }
+
   return (
-    <DashboardLayout allow="comptable" title="Facturation & paiements">
+    <DashboardLayout allow="comptable" title={t("Facturation & paiements")}>
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
-          label="Factures impayées"
+          label={t("Factures impayées")}
           value={loading ? "..." : String(invoicesCount)}
           icon={FileText}
           accent
         />
         <StatCard
-          label="Paiements encaissés"
+          label={t("Paiements encaissés")}
           value={loading ? "..." : fmt(paymentsSum)}
           icon={Wallet}
         />
         <StatCard
-          label="Mobile Money"
+          label={t("Mobile Money")}
           value={loading ? "..." : fmt(mobileMoneySum)}
           icon={CreditCard}
         />
         <StatCard
-          label="Reste à payer"
+          label={t("Reste à payer")}
           value={loading ? "..." : fmt(outstanding)}
           icon={TrendingUp}
         />
@@ -279,9 +442,40 @@ function ComptableHome() {
           animate={{ opacity: 1, y: 0 }}
           className="lg:col-span-2 rounded-3xl border bg-card p-7"
         >
-          <h3 className="text-lg font-bold text-[color:var(--navy)]">
-            Factures à encaisser
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-[color:var(--navy)]">{t("Factures à encaisser")}</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setHasNew(false);
+                void (async () => {
+                  setLoading(true);
+                  try {
+                    const supabase = await getSupabaseAsync();
+                    const sb: any = supabase;
+                    const inv = await sb
+                      .schema("app")
+                      .from("invoices")
+                      .select(
+                        `id, invoice_no, status, total, created_at, patient:patient_id (first_name, last_name)`,
+                      )
+                      .order("created_at", { ascending: false })
+                      .limit(100);
+                    if (!inv.error) setInvoices((inv.data ?? []) as any);
+                  } finally {
+                    setLoading(false);
+                  }
+                })();
+              }}
+              className="relative inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs hover:bg-muted"
+              title={t("Notifications")}
+            >
+              <Bell className="size-4" />
+              {hasNew ? (
+                <span className="absolute -top-1 -right-1 inline-block w-2.5 h-2.5 bg-red-500 rounded-full" />
+              ) : null}
+            </button>
+          </div>
           <div className="mt-5 space-y-2">
             {(loading ? [] : unpaidInvoices).map((x) => (
               <div
@@ -291,7 +485,7 @@ function ComptableHome() {
                 <div>
                   <p className="font-semibold text-[color:var(--navy)]">{x.invoice_no}</p>
                   <p className="text-xs text-muted-foreground">
-                    {x.patient ? `${x.patient.first_name} ${x.patient.last_name}` : "Patient"}
+                    {x.patient ? `${x.patient.first_name} ${x.patient.last_name}` : t("Patient")}
                     {" · "}
                     {new Date(x.created_at).toLocaleDateString("fr-FR")}
                     {" · "}
@@ -303,18 +497,25 @@ function ComptableHome() {
                     {fmt(Number(x.total || 0))}
                   </p>
                   <button
+                    onClick={() => downloadInvoicePdf(x)}
+                    className="rounded-xl border px-3 py-2 text-xs hover:bg-muted flex items-center gap-1"
+                    title={t("Télécharger en PDF")}
+                  >
+                    <Download className="size-3.5" />
+                  </button>
+                  <button
                     disabled={paying[x.id]}
                     onClick={() => void recordPayment(x, "cash")}
                     className="rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
                   >
-                    Cash
+                    {t("Cash")}
                   </button>
                   <button
                     disabled={paying[x.id]}
                     onClick={() => void recordPayment(x, "mobile_money")}
                     className="rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
                   >
-                    Mobile Money
+                    {t("Mobile Money")}
                   </button>
                   <button
                     disabled={paying[x.id]}
@@ -332,12 +533,12 @@ function ComptableHome() {
             ))}
             {!loading && unpaidInvoices.length === 0 ? (
               <div className="rounded-2xl border bg-muted/30 p-5 text-sm text-muted-foreground">
-                Aucune facture en attente aujourd'hui.
+                {t("Aucune facture en attente.")}
               </div>
             ) : null}
           </div>
 
-          <h3 className="mt-8 text-lg font-bold text-[color:var(--navy)]">Derniers paiements</h3>
+          <h3 className="mt-8 text-lg font-bold text-[color:var(--navy)]">{t("Derniers paiements")}</h3>
           <div className="mt-5 space-y-2">
             {(loading ? [] : payments).map((x) => (
               <div
@@ -348,7 +549,7 @@ function ComptableHome() {
                   <p className="font-semibold text-[color:var(--navy)]">
                     {x.invoice?.invoice_no ?? "-"}
                   </p>
-                  <p className="text-xs text-muted-foreground">Mode: {x.method}</p>
+                  <p className="text-xs text-muted-foreground">{t("Mode:")} {x.method}</p>
                 </div>
                 <p className="text-sm font-bold text-[color:var(--navy)]">
                   {fmt(Number(x.amount || 0))}
@@ -364,12 +565,12 @@ function ComptableHome() {
           transition={{ delay: 0.1 }}
           className="rounded-3xl gradient-hero p-7 text-white"
         >
-          <h3 className="text-lg font-bold">Rapport synthétique</h3>
-          <p className="text-white/70 text-sm">Journée en cours</p>
+          <h3 className="text-lg font-bold">{t("Rapport synthétique")}</h3>
+          <p className="text-white/70 text-sm">{t("Journée en cours")}</p>
           <div className="mt-6 space-y-3">
             {[
               {
-                label: "Montant moyen/facture",
+                label: t("Montant moyen/facture"),
                 value: invoicesCount
                   ? fmt(
                       Math.round(
@@ -379,11 +580,11 @@ function ComptableHome() {
                   : "-",
               },
               {
-                label: "Paiement moyen",
+                label: t("Paiement moyen"),
                 value: payments.length ? fmt(Math.round(paymentsSum / payments.length)) : "-",
               },
               {
-                label: "Part Mobile Money",
+                label: t("Part Mobile Money"),
                 value: paymentsSum ? Math.round((mobileMoneySum / paymentsSum) * 100) + "%" : "-",
               },
             ].map((k) => (
@@ -402,7 +603,7 @@ function ComptableHome() {
             disabled={aiLoading}
             className="mt-6 w-full rounded-2xl bg-white/10 hover:bg-white/15 text-white font-semibold py-3 border border-white/20 disabled:opacity-60"
           >
-            Générer le résumé du jour
+            {t("Générer le résumé du jour")}
           </button>
           {report ? (
             <div className="mt-4 rounded-2xl bg-white/5 border border-white/15 p-4 text-sm whitespace-pre-wrap">
@@ -438,9 +639,9 @@ function ComptableHome() {
                     <CreditCard className="size-4 text-white" />
                   </div>
                   <div>
-                    <p className="text-white font-semibold text-sm">Paiement sécurisé</p>
+                    <p className="text-white font-semibold text-sm">{t("Paiement sécurisé")}</p>
                     <p className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
-                      Propulsé par Stripe
+                      {t("Propulsé par Stripe")}
                     </p>
                   </div>
                 </div>
@@ -456,7 +657,7 @@ function ComptableHome() {
               <div className="p-6 space-y-4">
                 <div className="rounded-xl bg-gray-50 border p-4 flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500">Facture</p>
+                    <p className="text-sm text-gray-500">{t("Facture")}</p>
                     <p className="font-bold text-gray-800">{stripeInvoice.invoice_no}</p>
                     {stripeInvoice.patient ? (
                       <p className="text-xs text-gray-500">
@@ -472,7 +673,7 @@ function ComptableHome() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Titulaire de la carte
+                      {t("Titulaire de la carte")}
                     </label>
                     <input
                       value={stripeName}
@@ -485,7 +686,7 @@ function ComptableHome() {
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Numéro de carte
+                      {t("Numéro de carte")}
                     </label>
                     <input
                       value={stripeCard}
@@ -499,7 +700,7 @@ function ComptableHome() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Expiration
+                        {t("Expiration")}
                       </label>
                       <input
                         value={stripeExpiry}
@@ -538,18 +739,18 @@ function ComptableHome() {
                   {stripeProcessing ? (
                     <>
                       <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Traitement en cours...
+                      {t("Traitement en cours...")}
                     </>
                   ) : (
                     <>
                       <CreditCard className="size-4" />
-                      Payer {fmt(Number(stripeInvoice.total || 0))}
+                      {t("Payer")} {fmt(Number(stripeInvoice.total || 0))}
                     </>
                   )}
                 </button>
 
                 <p className="text-center text-[10px] text-gray-400">
-                  🔒 Paiement sécurisé SSL · Données chiffrées par Stripe
+                  {t("🔒 Paiement sécurisé SSL · Données chiffrées par Stripe")}
                 </p>
               </div>
             </motion.div>

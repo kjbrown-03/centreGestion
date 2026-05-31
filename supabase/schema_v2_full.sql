@@ -287,6 +287,19 @@ end $$;
 
 grant execute on function app.ensure_patient_account_self() to authenticated;
 
+-- ===================== SECRETARY CONSTRAINTS =====================
+
+-- Revert to initial behavior: drop unique role indexes and email enforcement (if present)
+do $$ begin
+  begin execute 'drop index if exists profiles_one_secretary'; exception when others then null; end;
+  begin execute 'drop index if exists profiles_one_pharmacien'; exception when others then null; end;
+  begin execute 'drop index if exists profiles_one_directeur'; exception when others then null; end;
+  begin execute 'drop index if exists profiles_one_comptable'; exception when others then null; end;
+end $$;
+
+drop trigger if exists trg_profiles_secretary_email on app.profiles;
+drop function if exists app.ensure_single_secretary_email();
+
 -- ===================== APPOINTMENTS =====================
 
 create table if not exists app.appointments (
@@ -309,6 +322,22 @@ drop trigger if exists set_appointments_updated_at on app.appointments;
 create trigger set_appointments_updated_at
 before update on app.appointments
 for each row execute function app.set_updated_at();
+
+-- Ensure created_by defaults to the secretary account when not provided
+create or replace function app.appointments_set_created_by_secretary() returns trigger
+language plpgsql security definer
+set search_path = app, public
+as $$
+declare v_sec uuid;
+begin
+  select p.user_id into v_sec from app.profiles p where p.role = 'secretaire' limit 1;
+  new.created_by = v_sec;
+  return new;
+end $$;
+
+-- Revert: remove forced created_by for appointments
+drop trigger if exists trg_appointments_set_created_by on app.appointments;
+drop function if exists app.appointments_set_created_by_secretary();
 
 -- ===================== DME / CONSULTATIONS =====================
 
@@ -375,6 +404,11 @@ create table if not exists app.dispensations (
   dispensed_at timestamptz not null default now(),
   notes text null
 );
+
+-- Route dispensations through the pharmacien account
+-- Revert: remove forced dispensed_by for dispensations
+drop trigger if exists trg_dispensations_set_dispensed_by on app.dispensations;
+drop function if exists app.dispensations_set_dispensed_by_pharmacien();
 
 -- ===================== EXAMS =====================
 
@@ -443,7 +477,7 @@ create table if not exists app.invoices (
   consultation_id uuid null references app.consultations(id) on delete set null,
   invoice_no text not null unique,
   status app.invoice_status not null default 'emise',
-  currency text not null default 'XAF',
+  currency text not null default 'FCFA',
   subtotal numeric(12,2) not null default 0,
   total numeric(12,2) not null default 0,
   created_by uuid null references app.profiles(user_id),
@@ -481,6 +515,10 @@ create trigger gen_invoice_no
 before insert on app.invoices
 for each row when (new.invoice_no is null)
 execute function app.gen_invoice_no();
+
+-- Revert: remove forced created_by for invoices
+drop trigger if exists trg_invoices_set_created_by on app.invoices;
+drop function if exists app.invoices_set_created_by_role();
 
 create table if not exists app.invoice_items (
   id uuid primary key default gen_random_uuid(),
@@ -531,13 +569,18 @@ create table if not exists app.payments (
   invoice_id uuid not null references app.invoices(id) on delete cascade,
   method app.payment_method not null,
   amount numeric(12,2) not null,
-  currency text not null default 'XAF',
+  currency text not null default 'FCFA',
   transaction_ref text null,
   received_at timestamptz not null default now(),
   received_by uuid null references app.profiles(user_id)
 );
 
 create index if not exists payments_invoice_idx on app.payments(invoice_id, received_at desc);
+
+-- Route payments through the comptable account
+-- Revert: remove forced received_by for payments
+drop trigger if exists trg_payments_set_received_by on app.payments;
+drop function if exists app.payments_set_received_by_comptable();
 
 -- ===================== AUDIT LOG =====================
 
@@ -709,7 +752,7 @@ for select using (app.has_role('medecin') and practitioner_id = auth.uid());
 
 drop policy if exists appointments_insert_staff on app.appointments;
 create policy appointments_insert_staff on app.appointments
-for insert with check (app.has_any_role(array['admin','secretaire']::app.user_role[]));
+for insert with check (app.has_role('secretaire'));
 
 drop policy if exists appointments_update_staff on app.appointments;
 create policy appointments_update_staff on app.appointments
@@ -839,7 +882,7 @@ for select using (app.has_any_role(array['admin','medecin','pharmacien']::app.us
 
 drop policy if exists dispensations_insert_pharmacien on app.dispensations;
 create policy dispensations_insert_pharmacien on app.dispensations
-for insert with check (app.has_any_role(array['admin','pharmacien']::app.user_role[]));
+for insert with check (app.has_role('pharmacien'));
 
 -- exams: read medecin/directeur/admin; insert medecin/admin; results insert lab/admin (not modeled) -> admin only
 drop policy if exists exam_orders_read_staff on app.exam_orders;
@@ -927,7 +970,7 @@ for select using (app.has_any_role(array['admin','comptable','secretaire','direc
 
 drop policy if exists invoices_insert_finance on app.invoices;
 create policy invoices_insert_finance on app.invoices
-for insert with check (app.has_any_role(array['admin','secretaire','comptable','medecin','pharmacien']::app.user_role[]));
+for insert with check (app.has_any_role(array['secretaire','comptable']::app.user_role[]));
 
 drop policy if exists invoices_update_comptable on app.invoices;
 create policy invoices_update_comptable on app.invoices
@@ -971,7 +1014,7 @@ for select using (app.has_any_role(array['admin','comptable','directeur']::app.u
 
 drop policy if exists payments_insert_comptable on app.payments;
 create policy payments_insert_comptable on app.payments
-for insert with check (app.has_any_role(array['admin','comptable']::app.user_role[]));
+for insert with check (app.has_role('comptable'));
 
 -- audit: read admin only, insert any logged user
 drop policy if exists audit_read_admin on app.audit_logs;
@@ -1007,8 +1050,7 @@ values
   ('pharmacy', 'Artemether/Lumefantrine', 'Antipaludique', 'boite', 90, 25, 2200, '2027-12-01')
 on conflict do nothing;
 
--- ===================== COMPAT VIEW (FRONTEND) =====================
--- Frontend expects `profiles` in public schema. This view preserves RLS by using security_invoker.
+--- Frontend expects `profiles` in public schema. This view preserves RLS by using security_invoker.
 
 create or replace view public.profiles
 with (security_invoker = true)
@@ -1032,6 +1074,58 @@ grant execute on all functions in schema app to service_role;
 alter default privileges in schema app grant all privileges on tables to service_role;
 alter default privileges in schema app grant all privileges on sequences to service_role;
 alter default privileges in schema app grant execute on functions to service_role;
+
+-- Admin Edge Function RPC: delete user safely handling FKs
+create or replace function public.delete_user_cascade(p_user_id uuid)
+returns void
+language plpgsql security definer
+set search_path = app, public
+as $$
+declare
+  v_role app.user_role;
+  v_sec uuid;
+  v_comp uuid;
+begin
+  select role into v_role from app.profiles where user_id = p_user_id;
+
+  if v_role in ('secretaire','pharmacien','directeur','comptable') then
+    raise exception 'Impossible de supprimer le compte fixe pour le rôle %', v_role;
+  end if;
+
+  -- Bloquer si des FKs NOT NULL référencent encore l'utilisateur
+  if exists(select 1 from app.consultations where practitioner_id = p_user_id) then
+    raise exception 'Impossible de supprimer: des consultations référencent cet utilisateur.';
+  end if;
+  if exists(select 1 from app.vitals where measured_by = p_user_id) then
+    raise exception 'Impossible de supprimer: des constantes référencent cet utilisateur.';
+  end if;
+  if exists(select 1 from app.prescriptions where practitioner_id = p_user_id) then
+    raise exception 'Impossible de supprimer: des prescriptions référencent cet utilisateur.';
+  end if;
+  if exists(select 1 from app.dispensations where dispensed_by = p_user_id) then
+    raise exception 'Impossible de supprimer: des délivrances référencent cet utilisateur.';
+  end if;
+  if exists(select 1 from app.exam_orders where practitioner_id = p_user_id) then
+    raise exception 'Impossible de supprimer: des examens référencent cet utilisateur.';
+  end if;
+
+  -- Réaffecter / annuler les références nullables
+  select user_id into v_sec from app.profiles where role = 'secretaire' limit 1;
+  select user_id into v_comp from app.profiles where role = 'comptable' limit 1;
+
+  update app.appointments set practitioner_id = null where practitioner_id = p_user_id;
+  update app.appointments set created_by = v_sec where created_by = p_user_id;
+  update app.invoices set created_by = coalesce(v_comp, v_sec, null) where created_by = p_user_id;
+  update app.payments set received_by = v_comp where received_by = p_user_id;
+  update app.messages set practitioner_id = null where practitioner_id = p_user_id;
+  update app.audit_logs set actor_user_id = null where actor_user_id = p_user_id;
+
+  -- Nettoyer les liens patient <-> user
+  delete from app.patient_accounts where user_id = p_user_id;
+
+  -- Supprimer le profil (les FKs NOT NULL ont été vérifiées ci-dessus)
+  delete from app.profiles where user_id = p_user_id;
+end $$;
 
 -- ===================== MESSAGES (PATIENT <-> PRATICIEN/SECRÉTARIAT) =====================
 

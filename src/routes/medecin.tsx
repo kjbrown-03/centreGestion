@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { suggestTreatment } from "@/lib/ai";
 import { whatsappUrlFor } from "@/lib/contact";
+import { useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/medecin")({ component: MedecinHome });
 
@@ -86,6 +87,7 @@ function formatTime(iso: string) {
 }
 
 function MedecinHome() {
+  const t = useT();
   const [loading, setLoading] = useState(true);
   const [appointments, setAppointments] = useState<ApptRow[]>([]);
 
@@ -94,6 +96,9 @@ function MedecinHome() {
   const [patientPrescriptions, setPatientPrescriptions] = useState<PrescriptionRow[]>([]);
   const [patientExamOrders, setPatientExamOrders] = useState<ExamOrderRow[]>([]);
   const [patientLoading, setPatientLoading] = useState(false);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [msgBody, setMsgBody] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
 
   const [creatingConsultation, setCreatingConsultation] = useState(false);
   const [chiefComplaint, setChiefComplaint] = useState("");
@@ -110,6 +115,7 @@ function MedecinHome() {
   >([{ medicine_name: "", qty: "1", frequency: "", duration: "" }]);
   const [creatingPrescription, setCreatingPrescription] = useState(false);
   const [medicineOptions, setMedicineOptions] = useState<string[]>([]);
+  const [medicinePrices, setMedicinePrices] = useState<Record<string, number>>({});
 
   const [examType, setExamType] = useState("");
   const [examPriority, setExamPriority] = useState<"routine" | "urgent">("routine");
@@ -125,6 +131,35 @@ function MedecinHome() {
     }
     return ids.size;
   }, [appointments]);
+
+  async function sendReply() {
+    if (!selectedAppt?.patient?.id) return;
+    const txt = msgBody.trim();
+    if (!txt) return;
+    setMsgSending(true);
+    try {
+      const supabase = await getSupabaseAsync();
+      const authUser = (await supabase.auth.getUser()).data.user;
+      if (!authUser?.id) throw new Error(t("Session introuvable. Veuillez vous reconnecter."));
+      const { error } = await (supabase as any)
+        .schema("app")
+        .from("messages")
+        .insert({ patient_id: selectedAppt.patient.id, practitioner_id: authUser.id, sender: "praticien", body: txt });
+      if (error) throw error;
+      setMsgBody("");
+      const { data, error: rErr } = await (supabase as any)
+        .schema("app")
+        .from("messages")
+        .select("id, body, sender, created_at, practitioner_id")
+        .eq("patient_id", selectedAppt.patient.id)
+        .order("created_at", { ascending: true });
+      if (!rErr) setMessages(data ?? []);
+    } catch (err: any) {
+      toast.error(err?.message ?? t("Envoi impossible."));
+    } finally {
+      setMsgSending(false);
+    }
+  }
 
   // Track ?q= from router to filter agenda
   const locationSearch = useRouterState({ select: (s) => s.location.search });
@@ -148,7 +183,7 @@ function MedecinHome() {
         supabaseForCleanup = supabase;
         const authUser = (await supabase.auth.getUser()).data.user;
         if (!authUser?.id) {
-          throw new Error("Session introuvable. Veuillez vous reconnecter.");
+          throw new Error(t("Session introuvable. Veuillez vous reconnecter."));
         }
 
         const start = startOfTodayIso();
@@ -191,7 +226,7 @@ function MedecinHome() {
         if (!mounted) return;
         setAppointments(((data ?? []) as any[]).map((r) => r as ApptRow));
       } catch (err: any) {
-        toast.error(err?.message ?? "Erreur lors du chargement des rendez-vous.");
+        toast.error(err?.message ?? t("Erreur lors du chargement des rendez-vous."));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -225,11 +260,16 @@ function MedecinHome() {
         const { data, error } = await (supabase as any)
           .schema("app")
           .from("stock_items")
-          .select("name")
+          .select("name, unit_price")
           .eq("kind", "pharmacy")
           .order("name", { ascending: true });
         if (error) throw error;
-        if (alive) setMedicineOptions((data ?? []).map((r: any) => r.name as string));
+        if (alive) {
+          setMedicineOptions((data ?? []).map((r: any) => r.name as string));
+          const prices: Record<string, number> = {};
+          for (const r of data ?? []) prices[r.name] = Number(r.unit_price ?? 0);
+          setMedicinePrices(prices);
+        }
       } catch {
         // ignore
       }
@@ -246,7 +286,7 @@ function MedecinHome() {
     try {
       const supabase = await getSupabaseAsync();
       const authUser = (await supabase.auth.getUser()).data.user;
-      if (!authUser?.id) throw new Error("Session introuvable. Veuillez vous reconnecter.");
+      if (!authUser?.id) throw new Error(t("Session introuvable. Veuillez vous reconnecter."));
 
       const patient = appt.patient;
 
@@ -254,6 +294,7 @@ function MedecinHome() {
         { data: consultations, error: cErr },
         { data: prescriptions, error: pErr },
         { data: orders, error: oErr },
+        { data: msgs, error: mErr },
       ] = await Promise.all([
         (supabase as any)
           .schema("app")
@@ -283,20 +324,28 @@ function MedecinHome() {
           .eq("practitioner_id", authUser.id)
           .order("created_at", { ascending: false })
           .limit(10),
+        (supabase as any)
+          .schema("app")
+          .from("messages")
+          .select("id, body, sender, created_at, practitioner_id")
+          .eq("patient_id", patient.id)
+          .order("created_at", { ascending: true }),
       ]);
 
       if (cErr) throw cErr;
       if (pErr) throw pErr;
       if (oErr) throw oErr;
+      if (mErr) throw mErr;
 
       setPatientConsultations(((consultations ?? []) as any[]).map((r) => r as ConsultationRow));
       setPatientPrescriptions(((prescriptions ?? []) as any[]).map((r) => r as PrescriptionRow));
       setPatientExamOrders(((orders ?? []) as any[]).map((r) => r as ExamOrderRow));
+      setMessages(msgs ?? []);
 
       const firstConsultationId = ((consultations ?? []) as any[])[0]?.id as string | undefined;
       setSelectedConsultationId(firstConsultationId ?? "");
     } catch (err: any) {
-      toast.error(err?.message ?? "Impossible de charger le dossier patient.");
+      toast.error(err?.message ?? t("Impossible de charger le dossier patient."));
     } finally {
       setPatientLoading(false);
     }
@@ -317,7 +366,7 @@ function MedecinHome() {
     try {
       const supabase = await getSupabaseAsync();
       const authUser = (await supabase.auth.getUser()).data.user;
-      if (!authUser?.id) throw new Error("Session introuvable. Veuillez vous reconnecter.");
+      if (!authUser?.id) throw new Error(t("Session introuvable. Veuillez vous reconnecter."));
 
       const { data, error } = await (supabase as any)
         .schema("app")
@@ -369,7 +418,7 @@ function MedecinHome() {
         // ignore
       }
 
-      toast.success("Consultation créée.");
+      toast.success(t("Consultation créée."));
       setChiefComplaint("");
       setSymptoms("");
       setDiagnosis("");
@@ -377,7 +426,7 @@ function MedecinHome() {
       if (data?.id) setSelectedConsultationId(String(data.id));
       await openPatientFile(selectedAppt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Impossible de créer la consultation.");
+      toast.error(err?.message ?? t("Impossible de créer la consultation."));
     } finally {
       setCreatingConsultation(false);
     }
@@ -386,7 +435,7 @@ function MedecinHome() {
   async function runAiSuggestion() {
     try {
       if (!chiefComplaint && !symptoms) {
-        toast.error("Renseigne motif/symptômes pour une suggestion.");
+        toast.error(t("Renseigne motif/symptômes pour une suggestion."));
         return;
       }
       setAiLoading(true);
@@ -394,7 +443,7 @@ function MedecinHome() {
       setAiSuggestion(text);
       if (!diagnosis && text) setDiagnosis(text.split("\n").slice(0, 3).join(" \u2022 "));
     } catch (err: any) {
-      toast.error(err?.message ?? "Orientation indisponible.");
+      toast.error(err?.message ?? t("Orientation indisponible."));
     } finally {
       setAiLoading(false);
     }
@@ -403,7 +452,7 @@ function MedecinHome() {
   async function createPrescription() {
     if (!selectedAppt?.patient?.id) return;
     if (!selectedConsultationId) {
-      toast.error("Sélectionne une consultation.");
+      toast.error(t("Sélectionne une consultation."));
       return;
     }
     const items = prescItems
@@ -419,7 +468,7 @@ function MedecinHome() {
       })
       .filter((i) => i.medicine_name);
     if (!items.length) {
-      toast.error("Ajoute au moins un médicament.");
+      toast.error(t("Ajoute au moins un médicament."));
       return;
     }
 
@@ -427,7 +476,7 @@ function MedecinHome() {
     try {
       const supabase = await getSupabaseAsync();
       const authUser = (await supabase.auth.getUser()).data.user;
-      if (!authUser?.id) throw new Error("Session introuvable. Veuillez vous reconnecter.");
+      if (!authUser?.id) throw new Error(t("Session introuvable. Veuillez vous reconnecter."));
 
       const { data: presc, error: pErr } = await (supabase as any)
         .schema("app")
@@ -448,11 +497,36 @@ function MedecinHome() {
         .insert(items.map((i) => ({ ...i, prescription_id: prescId })));
       if (iErr) throw iErr;
 
-      toast.success("Prescription créée. Le pharmacien a été notifié.");
+      // Créer la facture avec le montant des médicaments
+      try {
+        const invoiceItems = prescItems
+          .filter((pi) => pi.medicine_name.trim())
+          .map((pi) => ({
+            label: pi.medicine_name.trim(),
+            qty: parseInt(pi.qty) || 1,
+            unit_price: medicinePrices[pi.medicine_name.trim()] ?? 0,
+          }));
+        const { data: inv, error: invErr } = await (supabase as any)
+          .schema("app")
+          .from("invoices")
+          .insert({ patient_id: selectedAppt.patient.id, created_by: authUser.id })
+          .select("id")
+          .single();
+        if (!invErr && inv?.id && invoiceItems.length > 0) {
+          await (supabase as any)
+            .schema("app")
+            .from("invoice_items")
+            .insert(invoiceItems.map((ii) => ({ invoice_id: inv.id, ...ii })));
+        }
+      } catch {
+        // non bloquant
+      }
+
+      toast.success(t("Prescription créée. Le pharmacien a été notifié."));
       setPrescItems([{ medicine_name: "", qty: "1", frequency: "", duration: "" }]);
       await openPatientFile(selectedAppt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Impossible de créer la prescription.");
+      toast.error(err?.message ?? t("Impossible de créer la prescription."));
     } finally {
       setCreatingPrescription(false);
     }
@@ -461,11 +535,11 @@ function MedecinHome() {
   async function createExamOrder() {
     if (!selectedAppt?.patient?.id) return;
     if (!selectedConsultationId) {
-      toast.error("Sélectionne une consultation.");
+      toast.error(t("Sélectionne une consultation."));
       return;
     }
     if (!examType.trim()) {
-      toast.error("Type d’examen requis.");
+      toast.error(t("Type d’examen requis."));
       return;
     }
 
@@ -473,7 +547,7 @@ function MedecinHome() {
     try {
       const supabase = await getSupabaseAsync();
       const authUser = (await supabase.auth.getUser()).data.user;
-      if (!authUser?.id) throw new Error("Session introuvable. Veuillez vous reconnecter.");
+      if (!authUser?.id) throw new Error(t("Session introuvable. Veuillez vous reconnecter."));
 
       const { error } = await (supabase as any)
         .schema("app")
@@ -488,34 +562,34 @@ function MedecinHome() {
         });
       if (error) throw error;
 
-      toast.success("Examen demandé.");
+      toast.success(t("Examen demandé."));
       setExamType("");
       setExamPriority("routine");
       setExamNotes("");
       await openPatientFile(selectedAppt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Impossible de demander l’examen.");
+      toast.error(err?.message ?? t("Impossible de demander l’examen."));
     } finally {
       setCreatingExam(false);
     }
   }
 
   return (
-    <DashboardLayout allow="medecin" title="Mes consultations du jour">
+    <DashboardLayout allow="medecin" title={t("Mes consultations du jour")}>
       <div className="grid sm:grid-cols-3 gap-5">
         <StatCard
-          label="RDV aujourd'hui"
+          label={t("RDV aujourd'hui")}
           value={loading ? "..." : String(todayCount)}
           icon={Calendar}
           accent
         />
         <StatCard
-          label="Patients suivis (aujourd'hui)"
+          label={t("Patients suivis (aujourd'hui)")}
           value={loading ? "..." : String(followedPatientsCount)}
           icon={Users}
         />
         <StatCard
-          label="Consultations (dossier ouvert / 30j)"
+          label={t("Consultations (dossier ouvert / 30j)")}
           value={selectedAppt?.patient ? String(monthlyConsultationsCount) : "-"}
           icon={Stethoscope}
         />
@@ -527,7 +601,7 @@ function MedecinHome() {
           animate={{ opacity: 1, y: 0 }}
           className="lg:col-span-2 rounded-3xl border bg-card p-7"
         >
-          <h3 className="text-lg font-bold text-[color:var(--navy)]">Agenda du jour</h3>
+          <h3 className="text-lg font-bold text-[color:var(--navy)]">{t("Agenda du jour")}</h3>
           <div className="mt-5 space-y-2">
             {(loading ? [] : appointments).map((a, i) => (
               <motion.div
@@ -549,9 +623,9 @@ function MedecinHome() {
                 </div>
                 <div className="flex-1">
                   <p className="font-semibold text-[color:var(--navy)]">
-                    {a.patient ? `${a.patient.first_name} ${a.patient.last_name}` : "Patient"}
+                    {a.patient ? `${a.patient.first_name} ${a.patient.last_name}` : t("Patient")}
                   </p>
-                  <p className="text-sm text-muted-foreground">{a.reason ?? "Consultation"}</p>
+                  <p className="text-sm text-muted-foreground">{a.reason ?? t("Consultation")}</p>
                 </div>
                 <span
                   className={`text-xs font-medium px-3 py-1 rounded-full ${
@@ -567,7 +641,7 @@ function MedecinHome() {
 
             {!loading && appointments.length === 0 ? (
               <div className="rounded-2xl border bg-muted/40 p-5 text-sm text-muted-foreground">
-                Aucun rendez-vous aujourd’hui.
+                {t("Aucun rendez-vous aujourd’hui.")}
               </div>
             ) : null}
           </div>
@@ -588,7 +662,7 @@ function MedecinHome() {
             <div className="p-6 border-b flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-[color:var(--navy)]">
-                  Dossier patient · {selectedAppt.patient.first_name}{" "}
+                  {t("Dossier patient ·")} {selectedAppt.patient.first_name}{" "}
                   {selectedAppt.patient.last_name}
                 </h3>
                 {selectedAppt.patient.phone ? (<a href={whatsappUrlFor(selectedAppt.patient.phone)} target="_blank" rel="noreferrer" className="text-sm text-muted-foreground hover:text-[color:var(--navy)] hover:underline">WhatsApp: {selectedAppt.patient.phone}</a>) : null}
@@ -598,17 +672,17 @@ function MedecinHome() {
                 className="rounded-xl border px-4 py-2 text-sm hover:bg-muted"
                 onClick={() => setSelectedAppt(null)}
               >
-                Fermer
+                {t("Fermer")}
               </button>
             </div>
 
             <div className="p-6 grid lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
                 <div className="rounded-3xl border bg-card p-6">
-                  <h4 className="font-bold text-[color:var(--navy)]">Historique consultations</h4>
+                  <h4 className="font-bold text-[color:var(--navy)]">{t("Historique consultations")}</h4>
                   <div className="mt-4 space-y-3">
                     {patientLoading ? (
-                      <div className="text-sm text-muted-foreground">Chargement...</div>
+                      <div className="text-sm text-muted-foreground">{t("Chargement...")}</div>
                     ) : patientConsultations.length ? (
                       patientConsultations.map((c) => (
                         <div
@@ -627,26 +701,63 @@ function MedecinHome() {
                             </span>
                           </div>
                           <div className="mt-2 text-sm text-muted-foreground">
-                            {c.chief_complaint ? `Motif: ${c.chief_complaint}` : ""}
+                            {c.chief_complaint ? `${t("Motif:")} ${c.chief_complaint}` : ""}
                           </div>
                           <div className="mt-1 text-sm text-[color:var(--navy)]">
-                            {c.diagnosis ? `Diagnostic: ${c.diagnosis}` : ""}
+                            {c.diagnosis ? `${t("Diagnostic:")} ${c.diagnosis}` : ""}
                           </div>
                         </div>
                       ))
                     ) : (
                       <div className="text-sm text-muted-foreground">
-                        Aucune consultation trouvée.
+                        {t("Aucune consultation trouvée.")}
                       </div>
                     )}
                   </div>
                 </div>
 
                 <div className="rounded-3xl border bg-card p-6">
-                  <h4 className="font-bold text-[color:var(--navy)]">Examens</h4>
+                  <h4 className="font-bold text-[color:var(--navy)]">{t("Messagerie")}</h4>
+                  <div className="mt-4 space-y-3 max-h-[240px] overflow-auto pr-1">
+                    {patientLoading ? (
+                      <div className="text-sm text-muted-foreground">{t("Chargement...")}</div>
+                    ) : (messages ?? []).length === 0 ? (
+                      <div className="text-sm text-muted-foreground">{t("Aucun message.")}</div>
+                    ) : (
+                      messages.map((m: any) => (
+                        <div key={m.id} className={`px-4 py-3 rounded-2xl border ${m.sender === "patient" ? "bg-[color:var(--mint)]/10 ml-8" : "bg-muted/40 mr-8"}`}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-muted-foreground">{m.sender === "patient" ? t("Patient") : t("Praticien")}</span>
+                            <span className="text-[10px] text-muted-foreground">{new Date(m.created_at).toLocaleString()}</span>
+                          </div>
+                          <div className="mt-1 text-sm text-[color:var(--navy)] whitespace-pre-wrap">{m.body}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    <input
+                      value={msgBody}
+                      onChange={(e) => setMsgBody(e.target.value)}
+                      placeholder={t("Votre réponse...")}
+                      className="flex-1 rounded-xl border bg-background px-3 py-2 text-sm outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void sendReply()}
+                      disabled={msgSending || !msgBody.trim()}
+                      className="rounded-xl border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
+                    >
+                      {t("Envoyer")}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border bg-card p-6">
+                  <h4 className="font-bold text-[color:var(--navy)]">{t("Examens")}</h4>
                   <div className="mt-4 space-y-3">
                     {patientLoading ? (
-                      <div className="text-sm text-muted-foreground">Chargement...</div>
+                      <div className="text-sm text-muted-foreground">{t("Chargement...")}</div>
                     ) : patientExamOrders.length ? (
                       patientExamOrders.map((o) => (
                         <div key={o.id} className="rounded-2xl border p-4">
@@ -659,21 +770,21 @@ function MedecinHome() {
                             </span>
                           </div>
                           <div className="mt-2 text-sm text-muted-foreground">
-                            Priorité: {o.priority}
+                            {t("Priorité:")} {o.priority}
                           </div>
                           {o.result?.result_summary ? (
                             <div className="mt-2 text-sm text-[color:var(--navy)]">
-                              Résultat: {o.result.result_summary}
+                              {t("Résultat:")} {o.result.result_summary}
                             </div>
                           ) : (
                             <div className="mt-2 text-sm text-muted-foreground">
-                              Résultat non disponible.
+                              {t("Résultat non disponible.")}
                             </div>
                           )}
                         </div>
                       ))
                     ) : (
-                      <div className="text-sm text-muted-foreground">Aucun examen.</div>
+                      <div className="text-sm text-muted-foreground">{t("Aucun examen.")}</div>
                     )}
                   </div>
                 </div>
@@ -681,10 +792,10 @@ function MedecinHome() {
 
               <div className="space-y-6">
                 <div className="rounded-3xl border bg-card p-6">
-                  <h4 className="font-bold text-[color:var(--navy)]">Prescriptions</h4>
+                  <h4 className="font-bold text-[color:var(--navy)]">{t("Prescriptions")}</h4>
                   <div className="mt-4 space-y-3">
                     {patientLoading ? (
-                      <div className="text-sm text-muted-foreground">Chargement...</div>
+                      <div className="text-sm text-muted-foreground">{t("Chargement...")}</div>
                     ) : patientPrescriptions.length ? (
                       patientPrescriptions.map((p) => (
                         <div key={p.id} className="rounded-2xl border p-4">
@@ -707,34 +818,34 @@ function MedecinHome() {
                         </div>
                       ))
                     ) : (
-                      <div className="text-sm text-muted-foreground">Aucune prescription.</div>
+                      <div className="text-sm text-muted-foreground">{t("Aucune prescription.")}</div>
                     )}
                   </div>
                 </div>
 
                 <div className="rounded-3xl border bg-card p-6">
-                  <h4 className="font-bold text-[color:var(--navy)]">Actions</h4>
+                  <h4 className="font-bold text-[color:var(--navy)]">{t("Actions")}</h4>
                   <div className="mt-4 space-y-5">
                     <div className="space-y-2">
                       <div className="flex gap-2 items-center text-sm font-semibold text-[color:var(--navy)]">
-                        <FileText className="size-4" /> Nouvelle consultation
+                        <FileText className="size-4" /> {t("Nouvelle consultation")}
                       </div>
                       <input
                         value={chiefComplaint}
                         onChange={(e) => setChiefComplaint(e.target.value)}
-                        placeholder="Motif principal"
+                        placeholder={t("Motif principal")}
                         className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
                       />
                       <input
                         value={symptoms}
                         onChange={(e) => setSymptoms(e.target.value)}
-                        placeholder="Symptômes"
+                        placeholder={t("Symptômes")}
                         className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
                       />
                       <input
                         value={diagnosis}
                         onChange={(e) => setDiagnosis(e.target.value)}
-                        placeholder="Diagnostic"
+                        placeholder={t("Diagnostic")}
                         className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
                       />
                       {/* Champ Notes retiré */}
@@ -745,11 +856,11 @@ function MedecinHome() {
                           disabled={aiLoading}
                           className="rounded-2xl border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
                         >
-                          Suggérer orientation
+                          {t("Suggérer orientation")}
                         </button>
                         {aiSuggestion ? (
                           <span className="text-[10px] text-muted-foreground">
-                            Orientation prete (voir champ Diagnostic)
+                            {t("Orientation prete (voir champ Diagnostic)")}
                           </span>
                         ) : null}
                       </div>
@@ -759,14 +870,13 @@ function MedecinHome() {
                         disabled={creatingConsultation}
                         className="w-full rounded-2xl gradient-mint text-[color:var(--navy)] font-semibold py-3 disabled:opacity-60"
                       >
-                        Créer consultation
+                        {t("Créer consultation")}
                       </button>
                     </div>
 
                     <div className="space-y-2">
                       <div className="flex gap-2 items-center text-sm font-semibold text-[color:var(--navy)]">
-                        <Stethoscope className="size-4" /> Prescription (sur la consultation
-                        sélectionnée)
+                        <Stethoscope className="size-4" /> {t("Prescription (sur la consultation sélectionnée)")}
                       </div>
                       {prescItems.map((it, idx) => (
                         <div key={idx} className="rounded-2xl border p-3 space-y-2">
@@ -781,7 +891,7 @@ function MedecinHome() {
                             }
                             className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                           >
-                            <option value="">— Sélectionner un médicament —</option>
+                            <option value="">{t("— Sélectionner un médicament —")}</option>
                             {medicineOptions.map((n) => (
                               <option key={n} value={n}>
                                 {n}
@@ -800,7 +910,7 @@ function MedecinHome() {
                                   ),
                                 )
                               }
-                              placeholder="Qté"
+                              placeholder={t("Qté")}
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                             />
                             <select
@@ -814,17 +924,17 @@ function MedecinHome() {
                               }
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none"
                             >
-                              <option value="">— Fréquence —</option>
-                              <option value="1×/jour (matin)">1×/jour (matin)</option>
-                              <option value="2×/jour (matin & soir)">2×/jour (matin &amp; soir)</option>
-                              <option value="3×/jour (matin, midi, soir)">3×/jour (matin, midi, soir)</option>
-                              <option value="4×/jour (toutes les 6h)">4×/jour (toutes les 6h)</option>
-                              <option value="Toutes les 8h">Toutes les 8h</option>
-                              <option value="Toutes les 12h">Toutes les 12h</option>
-                              <option value="1×/semaine">1×/semaine</option>
-                              <option value="Au besoin (si douleur)">Au besoin (si douleur)</option>
-                              <option value="Le matin à jeun">Le matin à jeun</option>
-                              <option value="Le soir au coucher">Le soir au coucher</option>
+                              <option value="">{t("— Fréquence —")}</option>
+                              <option value="1×/jour (matin)">{t("1×/jour (matin)")}</option>
+                              <option value="2×/jour (matin & soir)">{t("2×/jour (matin & soir)")}</option>
+                              <option value="3×/jour (matin, midi, soir)">{t("3×/jour (matin, midi, soir)")}</option>
+                              <option value="4×/jour (toutes les 6h)">{t("4×/jour (toutes les 6h)")}</option>
+                              <option value="Toutes les 8h">{t("Toutes les 8h")}</option>
+                              <option value="Toutes les 12h">{t("Toutes les 12h")}</option>
+                              <option value="1×/semaine">{t("1×/semaine")}</option>
+                              <option value="Au besoin (si douleur)">{t("Au besoin (si douleur)")}</option>
+                              <option value="Le matin à jeun">{t("Le matin à jeun")}</option>
+                              <option value="Le soir au coucher">{t("Le soir au coucher")}</option>
                             </select>
                             <input
                               value={it.duration}
@@ -835,7 +945,7 @@ function MedecinHome() {
                                   ),
                                 )
                               }
-                              placeholder="Durée (ex: 7 jours)"
+                              placeholder={t("Durée (ex: 7 jours)")}
                               className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none col-span-2"
                             />
                           </div>
@@ -847,7 +957,7 @@ function MedecinHome() {
                             disabled={prescItems.length <= 1}
                             className="text-xs underline text-muted-foreground disabled:opacity-40"
                           >
-                            Retirer
+                            {t("Retirer")}
                           </button>
                         </div>
                       ))}
@@ -861,26 +971,37 @@ function MedecinHome() {
                         }
                         className="w-full rounded-2xl border py-2.5 text-sm hover:bg-muted"
                       >
-                        + Ajouter un médicament
+                        {t("+ Ajouter un médicament")}
                       </button>
+                      {(() => {
+                        const total = prescItems.reduce((s, pi) => {
+                          const price = medicinePrices[pi.medicine_name.trim()] ?? 0;
+                          return s + price * (parseInt(pi.qty) || 1);
+                        }, 0);
+                        return total > 0 ? (
+                          <div className="rounded-xl bg-[color:var(--mint)]/10 border border-[color:var(--mint)]/30 px-4 py-2 text-sm font-semibold text-[color:var(--navy)]">
+                            {t("Total estimé :")} {total.toLocaleString("fr-FR")} FCFA
+                          </div>
+                        ) : null;
+                      })()}
                       <button
                         type="button"
                         onClick={() => void createPrescription()}
                         disabled={creatingPrescription}
                         className="w-full rounded-2xl border py-3 text-sm font-semibold hover:bg-muted disabled:opacity-60"
                       >
-                        Enregistrer prescription
+                        {t("Enregistrer prescription")}
                       </button>
                     </div>
 
                     <div className="space-y-2">
                       <div className="flex gap-2 items-center text-sm font-semibold text-[color:var(--navy)]">
-                        <Clock className="size-4" /> Demande d’examen
+                        <Clock className="size-4" /> {t("Demande d’examen")}
                       </div>
                       <input
                         value={examType}
                         onChange={(e) => setExamType(e.target.value)}
-                        placeholder="Type (ex: NFS, Glycémie, Radio...)"
+                        placeholder={t("Type (ex: NFS, Glycémie, Radio...)")}
                         className="w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none"
                       />
                       <div className="grid grid-cols-2 gap-2">
@@ -889,14 +1010,14 @@ function MedecinHome() {
                           className={`rounded-2xl border py-2.5 text-sm ${examPriority === "routine" ? "bg-muted" : ""}`}
                           onClick={() => setExamPriority("routine")}
                         >
-                          Routine
+                          {t("Routine")}
                         </button>
                         <button
                           type="button"
                           className={`rounded-2xl border py-2.5 text-sm ${examPriority === "urgent" ? "bg-muted" : ""}`}
                           onClick={() => setExamPriority("urgent")}
                         >
-                          Urgent
+                          {t("Urgent")}
                         </button>
                       </div>
                       {/* Champ Notes/indications retiré */}
@@ -906,7 +1027,7 @@ function MedecinHome() {
                         disabled={creatingExam}
                         className="w-full rounded-2xl border py-3 text-sm font-semibold hover:bg-muted disabled:opacity-60"
                       >
-                        Envoyer demande
+                        {t("Envoyer demande")}
                       </button>
                     </div>
                   </div>

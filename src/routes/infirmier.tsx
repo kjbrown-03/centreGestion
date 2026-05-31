@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { toast } from "sonner";
 import { nurseCareAdvisor } from "@/lib/ai";
+import { useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/infirmier")({ component: InfirmierHome });
 
@@ -17,6 +18,7 @@ const tasks = [
 ];
 
 function InfirmierHome() {
+  const tr = useT();
   const [aiLoading, setAiLoading] = useState(false);
   const [tips, setTips] = useState("");
 
@@ -25,19 +27,19 @@ function InfirmierHome() {
       setAiLoading(true);
       setTips(await nurseCareAdvisor(tasks));
     } catch (err: any) {
-      toast.error(err?.message ?? "Service indisponible.");
+      toast.error(err?.message ?? tr("Service indisponible."));
     } finally {
       setAiLoading(false);
     }
   }
 
   return (
-    <DashboardLayout allow="infirmier" title="Soins du jour">
+    <DashboardLayout allow="infirmier" title={tr("Soins du jour")}>
       <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-5">
-        <StatCard label="Soins planifies" value="18" icon={Syringe} accent />
-        <StatCard label="Patients suivis" value="32" icon={HeartPulse} />
-        <StatCard label="Constantes prises" value="46" icon={Activity} />
-        <StatCard label="Alertes" value="2" icon={AlertCircle} />
+        <StatCard label={tr("Soins planifies")} value="18" icon={Syringe} accent />
+        <StatCard label={tr("Patients suivis")} value="32" icon={HeartPulse} />
+        <StatCard label={tr("Constantes prises")} value="46" icon={Activity} />
+        <StatCard label={tr("Alertes")} value="2" icon={AlertCircle} />
       </div>
 
       <div className="mt-8 grid lg:grid-cols-3 gap-6">
@@ -47,14 +49,14 @@ function InfirmierHome() {
           className="lg:col-span-2 rounded-3xl border bg-card p-4 sm:p-7"
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h3 className="text-lg font-bold text-[color:var(--navy)]">Planning de soins</h3>
+            <h3 className="text-lg font-bold text-[color:var(--navy)]">{tr("Planning de soins")}</h3>
             <button
               type="button"
               onClick={() => void runAi()}
               disabled={aiLoading}
               className="rounded-2xl border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
             >
-              Prioriser les soins
+              {tr("Prioriser les soins")}
             </button>
           </div>
           <div className="mt-5 space-y-2">
@@ -71,12 +73,12 @@ function InfirmierHome() {
                   <span className="text-lg font-bold leading-none">{t.time.split(":")[1]}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-[color:var(--navy)] break-words">{t.patient}</p>
-                  <p className="text-sm text-muted-foreground break-words">{t.act}</p>
+                  <p className="font-semibold text-[color:var(--navy)] break-words">{tr(t.patient)}</p>
+                  <p className="text-sm text-muted-foreground break-words">{tr(t.act)}</p>
                 </div>
                 {t.urgent && (
                   <span className="self-start sm:self-auto text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-amber-500 text-white">
-                    Urgent
+                    {tr("Urgent")}
                   </span>
                 )}
               </motion.div>
@@ -91,8 +93,8 @@ function InfirmierHome() {
           className="rounded-3xl gradient-hero p-4 sm:p-7 text-white"
         >
           <Thermometer className="size-6 text-[color:var(--mint)]" />
-          <h3 className="mt-3 text-lg font-bold">Constantes critiques</h3>
-          <p className="text-white/70 text-sm">Patients sous surveillance</p>
+          <h3 className="mt-3 text-lg font-bold">{tr("Constantes critiques")}</h3>
+          <p className="text-white/70 text-sm">{tr("Patients sous surveillance")}</p>
           {tips ? (
             <div className="mt-4 rounded-2xl glass-dark p-4 text-xs whitespace-pre-wrap">
               {tips}

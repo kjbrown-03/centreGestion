@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { getSupabaseAsync } from "@/lib/supabase";
+import { useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/secretaire")({ component: SecretaireHome });
 
@@ -39,6 +40,7 @@ type Appt = {
 };
 
 function SecretaireHome() {
+  const t = useT();
   const [loading, setLoading] = useState(true);
   const [appts, setAppts] = useState<Appt[]>([]);
   const [practitioners, setPractitioners] = useState<Array<{ user_id: string; full_name: string }>>(
@@ -150,25 +152,13 @@ function SecretaireHome() {
 
   const queue = useMemo(
     () =>
-      appts.filter(
-        (a) =>
-          a.status === "en_attente" &&
-          a.scheduled_at >= todayStart &&
-          a.scheduled_at < tomorrowStart,
-      ),
-    [appts, todayStart, tomorrowStart],
+      appts.filter((a) => a.status === "en_attente"),
+    [appts],
   );
   const upcoming = useMemo(
     () =>
-      appts.filter(
-        (a) =>
-          !(
-            a.status === "en_attente" &&
-            a.scheduled_at >= todayStart &&
-            a.scheduled_at < tomorrowStart
-          ),
-      ),
-    [appts, todayStart, tomorrowStart],
+      appts.filter((a) => a.status !== "en_attente"),
+    [appts],
   );
   const todayAppts = useMemo(
     () => appts.filter((a) => a.scheduled_at >= todayStart && a.scheduled_at < tomorrowStart),
@@ -178,7 +168,7 @@ function SecretaireHome() {
   async function assignAndConfirm(apptId: string) {
     const practitioner_id = assignSel[apptId];
     if (!practitioner_id) {
-      toast.error("Sélectionnez un médecin.");
+      toast.error(t("Sélectionnez un médecin."));
       return;
     }
     try {
@@ -191,17 +181,17 @@ function SecretaireHome() {
         .eq("id", apptId);
       if (error) {
         // Contrainte d'unicité: un médecin ne peut pas avoir 2 RDV au même horaire
-        const msg: string = (error as any)?.message ?? "Mise à jour impossible.";
+        const msg: string = (error as any)?.message ?? t("Mise à jour impossible.");
         if (
           msg.toLowerCase().includes("unique") ||
           msg.includes("appointments_unique_practitioner_time")
         ) {
-          toast.error("Ce médecin a déjà un rendez-vous à cette heure.");
+          toast.error(t("Ce médecin a déjà un rendez-vous à cette heure."));
           return;
         }
         throw error;
       }
-      toast.success("Rendez-vous confirmé et assigné.");
+      toast.success(t("Rendez-vous confirmé et assigné."));
       // refresh list
       const { data, error: rErr } = await sb
         .schema("app")
@@ -214,26 +204,26 @@ function SecretaireHome() {
         .order("scheduled_at", { ascending: true });
       if (!rErr) setAppts((data ?? []) as any);
     } catch (err: any) {
-      toast.error(err?.message ?? "Mise à jour impossible.");
+      toast.error(err?.message ?? t("Mise à jour impossible."));
     }
   }
 
   return (
-    <DashboardLayout allow="secretaire" title="Accueil & rendez-vous">
+    <DashboardLayout allow="secretaire" title={t("Accueil & rendez-vous")}>
       <div className="grid sm:grid-cols-4 gap-5">
         <StatCard
-          label="File d'attente"
+          label={t("File d'attente")}
           value={loading ? "…" : String(queue.length)}
           icon={Users}
           accent
         />
         <StatCard
-          label="RDV aujourd'hui"
+          label={t("RDV aujourd'hui")}
           value={loading ? "…" : String(todayAppts.length)}
           icon={Calendar}
         />
-        <StatCard label="Appels traités" value="0" icon={Phone} />
-        <StatCard label="Messages" value="0" icon={MessageSquare} />
+        <StatCard label={t("Appels traités")} value="0" icon={Phone} />
+        <StatCard label={t("Messages")} value="0" icon={MessageSquare} />
       </div>
 
       <div className="mt-8 grid lg:grid-cols-2 gap-6">
@@ -243,23 +233,23 @@ function SecretaireHome() {
           className="rounded-3xl border bg-card p-7"
         >
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-[color:var(--navy)]">File d'attente</h3>
+            <h3 className="text-lg font-bold text-[color:var(--navy)]">{t("File d'attente")}</h3>
             <div className="flex items-center gap-2">
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Filtrer (nom patient / motif)"
+                placeholder={t("Filtrer (nom patient / motif)")}
                 className="text-xs rounded-xl border px-2 py-1"
               />
               <span className="text-xs px-3 py-1 rounded-full bg-[color:var(--mint)]/20 text-[color:var(--navy)] font-medium">
-                {loading ? "…" : `${queue.length} personnes`}
+                {loading ? "…" : `${queue.length} ${t("personnes")}`}
               </span>
             </div>
           </div>
           <div className="mt-5 space-y-2">
             {!loading && queue.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">
-                Aucun patient en file d'attente pour aujourd'hui.
+                {t("Aucun patient en file d'attente.")}
               </div>
             ) : null}
             {(loading ? [] : queue).map((q, i) => (
@@ -278,7 +268,7 @@ function SecretaireHome() {
                   <p className="font-semibold text-[color:var(--navy)]">
                     {q.patient ? `${q.patient.first_name} ${q.patient.last_name}` : "—"}
                   </p>
-                  <p className="text-xs text-muted-foreground">{q.reason || "Rendez-vous"}</p>
+                  <p className="text-xs text-muted-foreground">{q.reason || t("Rendez-vous")}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <select
@@ -286,10 +276,10 @@ function SecretaireHome() {
                     onChange={(e) => setAssignSel((s) => ({ ...s, [q.id]: e.target.value }))}
                     className="text-xs rounded-xl border px-2 py-1"
                   >
-                    <option value="">— Médecin —</option>
+                    <option value="">{t("— Médecin —")}</option>
                     {practitioners.length === 0 ? (
                       <option value="" disabled>
-                        Aucun médecin trouvé
+                        {t("Aucun médecin trouvé")}
                       </option>
                     ) : null}
                     {practitioners.map((p) => (
@@ -303,7 +293,7 @@ function SecretaireHome() {
                     onClick={() => void assignAndConfirm(q.id)}
                     className="text-xs rounded-xl border px-2 py-1 hover:bg-muted"
                   >
-                    Confirmer
+                    {t("Confirmer")}
                   </button>
                 </div>
               </motion.div>
@@ -317,11 +307,11 @@ function SecretaireHome() {
           transition={{ delay: 0.1 }}
           className="rounded-3xl border bg-card p-7"
         >
-          <h3 className="text-lg font-bold text-[color:var(--navy)]">Prochains rendez-vous</h3>
+          <h3 className="text-lg font-bold text-[color:var(--navy)]">{t("Prochains rendez-vous")}</h3>
           <div className="mt-5 space-y-2">
             {!loading && upcoming.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">
-                Aucun rendez-vous à venir.
+                {t("Aucun rendez-vous à venir.")}
               </div>
             ) : null}
             {(loading ? [] : upcoming).map((u, i) => (
@@ -343,7 +333,7 @@ function SecretaireHome() {
                     {u.patient ? `${u.patient.first_name} ${u.patient.last_name}` : "—"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    avec {u.practitioner?.full_name || "—"}
+                    {t("avec")} {u.practitioner?.full_name || "—"}
                   </p>
                 </div>
               </motion.div>

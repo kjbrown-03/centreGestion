@@ -10,6 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { whatsappUrlFor } from "@/lib/contact";
 import { useAuth } from "@/lib/store";
+import { useT } from "@/lib/i18n";
+import { formatFcfa } from "@/lib/currency";
 import {
   User,
   Calendar,
@@ -53,6 +55,7 @@ async function loadPatientLink(sb: any, userId: string) {
 }
 
 function PatientDashboard() {
+  const t = useT();
   const appUser = useAuth((s: { user: any }) => s.user);
   const [patient, setPatient] = useState<any | null>(null);
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -154,7 +157,7 @@ function PatientDashboard() {
           });
         }
       } catch (err: any) {
-        toast.error(err?.message ?? "Impossible de charger vos données.");
+        toast.error(err?.message ?? t("Impossible de charger vos données."));
       } finally {
         if (alive) setLoading(false);
       }
@@ -185,16 +188,16 @@ function PatientDashboard() {
   const handleBookAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!desiredDate || !desiredTime || !reason.trim()) {
-      toast.error("Veuillez remplir tous les champs du formulaire.");
+      toast.error(t("Veuillez remplir tous les champs du formulaire."));
       return;
     }
     const selectedDate = new Date(`${desiredDate}T${desiredTime}:00`);
     if (selectedDate.getTime() < Date.now()) {
-      toast.error("La date du rendez-vous ne peut pas être antérieure à aujourd'hui.");
+      toast.error(t("La date du rendez-vous ne peut pas être antérieure à aujourd'hui."));
       return;
     }
     if (!patient?.id) {
-      toast.error("Dossier patient indisponible. Contactez l'accueil pour activer votre espace.");
+      toast.error(t("Dossier patient indisponible. Contactez l'accueil pour activer votre espace."));
       return;
     }
     try {
@@ -215,7 +218,7 @@ function PatientDashboard() {
       setDesiredDate("");
       setDesiredTime("");
       setReason("");
-      toast.success("Rendez-vous demandé ! En attente de validation par l'accueil.");
+      toast.success(t("Rendez-vous demandé ! En attente de validation par l'accueil."));
       const { data, error: apErr } = await (supabase as any)
         .schema("app")
         .from("appointments")
@@ -224,13 +227,13 @@ function PatientDashboard() {
         .order("scheduled_at", { ascending: false });
       if (!apErr) setAppointments(data ?? []);
     } catch (err: any) {
-      toast.error(err?.message ?? "Erreur lors de la demande de rendez-vous.");
+      toast.error(err?.message ?? t("Erreur lors de la demande de rendez-vous."));
     }
   };
 
   function openInvoiceForDownload(inv: any) {
     const items: any[] = inv.items ?? [];
-    const total = Number(inv.total ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 2 });
+    const total = formatFcfa(Number(inv.total ?? 0));
     const dateEmis = format(new Date(inv.created_at), "dd/MM/yyyy", { locale: fr });
     const patientName = patient ? `${patient.first_name} ${patient.last_name}` : "Patient";
     const statusLabel = inv.status === "payee" ? "Payée ✓" : inv.status === "emise" ? "Émise" : inv.status ?? "";
@@ -241,8 +244,8 @@ function PatientDashboard() {
         <tr>
           <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0">${li.label ?? ""}</td>
           <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;text-align:center">${li.qty ?? 1}</td>
-          <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;text-align:right">${Number(li.unit_price ?? 0).toLocaleString("fr-FR")} XAF</td>
-          <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;text-align:right">${Number(li.line_total ?? 0).toLocaleString("fr-FR")} XAF</td>
+          <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;text-align:right">${formatFcfa(Number(li.unit_price ?? 0))}</td>
+          <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;text-align:right">${formatFcfa(Number(li.line_total ?? 0))}</td>
         </tr>`).join("")
       : `<tr><td colspan="4" style="padding:16px;text-align:center;color:#94a3b8">Aucun détail disponible.</td></tr>`;
 
@@ -296,7 +299,7 @@ function PatientDashboard() {
     </div>
     <div style="text-align:right">
       <div class="info-label">Montant total</div>
-      <div class="info-value" style="font-size:20px;color:${statusColor}">${total} XAF</div>
+      <div class="info-value" style="font-size:20px;color:${statusColor}">${total}</div>
     </div>
   </div>
 
@@ -313,7 +316,7 @@ function PatientDashboard() {
       ${rowsHtml}
       <tr class="total-row">
         <td colspan="3" style="text-align:right;color:#64748b;font-size:13px;font-weight:600">TOTAL</td>
-        <td style="text-align:right;color:#1e3a5f">${total} XAF</td>
+        <td style="text-align:right;color:#1e3a5f">${total}</td>
       </tr>
     </tbody>
   </table>
@@ -342,9 +345,9 @@ function PatientDashboard() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      toast.success("Facture téléchargée. Ouvrez le fichier pour l'imprimer en PDF.");
+      toast.success(t("Facture téléchargée. Ouvrez le fichier pour l'imprimer en PDF."));
     } else {
-      toast.success("Facture ouverte — sélectionnez « Enregistrer en PDF » dans la fenêtre d'impression.");
+      toast.success(t("Facture ouverte — sélectionnez « Enregistrer en PDF » dans la fenêtre d'impression."));
     }
     setTimeout(() => URL.revokeObjectURL(url), 15000);
   }
@@ -433,9 +436,9 @@ function PatientDashboard() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      toast.success("Ordonnance téléchargée.");
+      toast.success(t("Ordonnance téléchargée."));
     } else {
-      toast.success("Ordonnance ouverte — sélectionnez « Enregistrer en PDF ».");
+      toast.success(t("Ordonnance ouverte — sélectionnez « Enregistrer en PDF »."));
     }
     setTimeout(() => URL.revokeObjectURL(url), 15000);
   }
@@ -453,13 +456,14 @@ function PatientDashboard() {
       const { error } = await (supabase as any).schema("app").from("patients").update(patch).eq("id", patient.id);
       if (error) throw error;
       setPatient((p: any) => ({ ...p, ...patch }));
-      toast.success("Dossier médical mis à jour.");
+      toast.success(t("Dossier médical mis à jour."));
     } catch (err: any) {
-      toast.error(err?.message ?? "Mise à jour impossible.");
+      toast.error(err?.message ?? t("Mise à jour impossible."));
     }
   }
 
   function PatientMessaging({ patient }: { patient: any | null }) {
+    const t = useT();
     const [loading, setLoading] = useState<boolean>(false);
     const [sending, setSending] = useState<boolean>(false);
     const [messages, setMessages] = useState<any[]>([]);
@@ -496,7 +500,7 @@ function PatientDashboard() {
             setPractitioners(doctors.data ?? []);
           }
         } catch (err: any) {
-          toast.error(err?.message ?? "Impossible de charger la messagerie.");
+          toast.error(err?.message ?? t("Impossible de charger la messagerie."));
         } finally {
           if (alive) setLoading(false);
         }
@@ -527,7 +531,7 @@ function PatientDashboard() {
           .order("created_at", { ascending: true });
         if (!rErr) setMessages(data ?? []);
       } catch (err: any) {
-        toast.error(err?.message ?? "Envoi impossible.");
+        toast.error(err?.message ?? t("Envoi impossible."));
       } finally {
         setSending(false);
       }
@@ -540,18 +544,18 @@ function PatientDashboard() {
             <MessageSquare className="size-5" />
           </span>
           <div>
-            <h3 className="text-lg font-bold text-[color:var(--navy)]">Messagerie sécurisée</h3>
+            <h3 className="text-lg font-bold text-[color:var(--navy)]">{t("Messagerie sécurisée")}</h3>
             <p className="text-xs text-muted-foreground">
-              Échangez avec le secrétariat et votre praticien.
+              {t("Échangez avec le secrétariat et votre praticien.")}
             </p>
           </div>
         </div>
 
         <div className="mt-6 space-y-3 max-h-[380px] overflow-auto pr-1">
           {loading ? (
-            <div className="text-sm text-muted-foreground">Chargement...</div>
+            <div className="text-sm text-muted-foreground">{t("Chargement...")}</div>
           ) : (messages ?? []).length === 0 ? (
-            <div className="text-sm text-muted-foreground">Aucun message.</div>
+            <div className="text-sm text-muted-foreground">{t("Aucun message.")}</div>
           ) : (
             messages.map((m) => (
               <div
@@ -563,9 +567,9 @@ function PatientDashboard() {
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-muted-foreground">
                     {m.sender === "patient"
-                      ? "Moi"
+                      ? t("Moi")
                       : m.practitioner?.full_name ||
-                        (m.sender === "secretaire" ? "Secrétariat" : "Praticien")}
+                        (m.sender === "secretaire" ? t("Secrétariat") : t("Praticien"))}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
                     {new Date(m.created_at).toLocaleString()}
@@ -584,9 +588,9 @@ function PatientDashboard() {
             value={practitionerId}
             onChange={(e) => setPractitionerId(e.target.value)}
             className="w-full sm:w-44 rounded-2xl border bg-background px-3 py-3 text-sm outline-none"
-            aria-label="Choisir un médecin"
+            aria-label={t("Choisir un médecin")}
           >
-            <option value="">Secrétariat</option>
+            <option value="">{t("Secrétariat")}</option>
             {practitioners.map((doctor) => (
               <option key={doctor.user_id} value={doctor.user_id}>
                 {doctor.full_name}
@@ -596,7 +600,7 @@ function PatientDashboard() {
           <input
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Votre message..."
+            placeholder={t("Votre message...")}
             className="flex-1 rounded-2xl border bg-background px-4 py-3 text-sm outline-none"
           />
           <Button
@@ -604,7 +608,7 @@ function PatientDashboard() {
             disabled={sending || !body.trim()}
             className="rounded-2xl"
           >
-            Envoyer
+            {t("Envoyer")}
           </Button>
         </div>
       </Card>
@@ -612,32 +616,32 @@ function PatientDashboard() {
   }
 
   return (
-    <DashboardLayout allow="patient" title="Mon Espace Santé">
+    <DashboardLayout allow="patient" title={t("Mon Espace Santé")}>
       {/* Overview stats */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
-          label="Groupe Sanguin"
+          label={t("Groupe Sanguin")}
           value={patient?.blood_type ?? "-"}
-          hint="Données biologiques validées"
+          hint={t("Données biologiques validées")}
           icon={Droplet}
           accent
         />
         <StatCard
-          label="Prochains RDV"
+          label={t("Prochains RDV")}
           value={upcomingAppointments.length}
-          hint={upcomingAppointments.length > 0 ? "Consultez l'agenda" : "Aucun planifié"}
+          hint={upcomingAppointments.length > 0 ? t("Consultez l'agenda") : t("Aucun planifié")}
           icon={Calendar}
         />
         <StatCard
-          label="Ordonnances Actives"
+          label={t("Ordonnances Actives")}
           value={patientPrescriptions.length}
-          hint="Dernières prescriptions"
+          hint={t("Dernières prescriptions")}
           icon={FileText}
         />
         <StatCard
-          label="Allergies identifiées"
+          label={t("Allergies identifiées")}
           value={patient ? (patient.allergies?.length ?? 0) : 0}
-          hint="Dossier médical unifié"
+          hint={t("Dossier médical unifié")}
           icon={AlertCircle}
         />
       </div>
@@ -646,23 +650,23 @@ function PatientDashboard() {
         <TabsList className="grid w-full grid-cols-5 max-w-3xl bg-muted/60 p-1 rounded-2xl">
           <TabsTrigger value="appointments" className="rounded-xl flex items-center gap-2">
             <Calendar className="size-4" />
-            <span className="hidden sm:inline">Rendez-vous</span>
+            <span className="hidden sm:inline">{t("Rendez-vous")}</span>
           </TabsTrigger>
           <TabsTrigger value="medical" className="rounded-xl flex items-center gap-2">
             <FileHeart className="size-4" />
-            <span className="hidden sm:inline">Dossier médical</span>
+            <span className="hidden sm:inline">{t("Dossier médical")}</span>
           </TabsTrigger>
           <TabsTrigger value="prescriptions" className="rounded-xl flex items-center gap-2">
             <FileText className="size-4" />
-            <span className="hidden sm:inline">Ordonnances</span>
+            <span className="hidden sm:inline">{t("Ordonnances")}</span>
           </TabsTrigger>
           <TabsTrigger value="invoices" className="rounded-xl flex items-center gap-2">
             <FileText className="size-4" />
-            <span className="hidden sm:inline">Factures</span>
+            <span className="hidden sm:inline">{t("Factures")}</span>
           </TabsTrigger>
           <TabsTrigger value="messages" className="rounded-xl flex items-center gap-2">
             <MessageSquare className="size-4" />
-            <span className="hidden sm:inline">Messagerie</span>
+            <span className="hidden sm:inline">{t("Messagerie")}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -677,17 +681,17 @@ function PatientDashboard() {
                     <span className="p-2 rounded-xl gradient-mint text-[color:var(--navy)]">
                       <Plus className="size-5" />
                     </span>
-                    Nouveau Rendez-vous
+                    {t("Nouveau Rendez-vous")}
                   </CardTitle>
                   <CardDescription className="mt-2 text-sm text-muted-foreground">
-                    Planifiez une consultation de médecine générale ou de suivi.
+                    {t("Planifiez une consultation de médecine générale ou de suivi.")}
                   </CardDescription>
                 </CardHeader>
 
                 <form onSubmit={handleBookAppointment} className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)] mb-1.5">
-                      Date souhaitée
+                      {t("Date souhaitée")}
                     </label>
                     <input
                       type="date"
@@ -701,7 +705,7 @@ function PatientDashboard() {
 
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)] mb-1.5">
-                      Heure préférée
+                      {t("Heure préférée")}
                     </label>
                     <input
                       type="time"
@@ -714,13 +718,13 @@ function PatientDashboard() {
 
                   <div>
                     <label className="block text-xs font-semibold uppercase tracking-wider text-[color:var(--navy)] mb-1.5">
-                      Motif de visite
+                      {t("Motif de visite")}
                     </label>
                     <textarea
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       rows={3}
-                      placeholder="Ex: Suivi tension, renouvellement ordonnance, consultation..."
+                      placeholder={t("Ex: Suivi tension, renouvellement ordonnance, consultation...")}
                       className="w-full rounded-xl border bg-card px-4 py-3 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition resize-none"
                       required
                     />
@@ -730,7 +734,7 @@ function PatientDashboard() {
                     type="submit"
                     className="w-full inline-flex items-center justify-center gap-2 rounded-2xl gradient-mint text-[color:var(--navy)] font-semibold py-3.5 shadow-mint hover:brightness-110 transition border-none mt-2"
                   >
-                    <Calendar className="size-4" /> Demander le rendez-vous
+                    <Calendar className="size-4" /> {t("Demander le rendez-vous")}
                   </Button>
                 </form>
               </div>
@@ -743,7 +747,7 @@ function PatientDashboard() {
                 <CardHeader className="p-0 mb-5">
                   <CardTitle className="text-lg font-bold text-[color:var(--navy)] flex items-center gap-2">
                     <Clock className="size-5 text-[color:var(--mint)]" />
-                    Consultations planifiées
+                    {t("Consultations planifiées")}
                   </CardTitle>
                 </CardHeader>
 
@@ -751,7 +755,7 @@ function PatientDashboard() {
                   <div className="text-center py-10 border border-dashed rounded-2xl">
                     <Calendar className="size-8 mx-auto text-muted-foreground/50 mb-3" />
                     <p className="text-muted-foreground text-sm">
-                      Aucun rendez-vous planifié à venir.
+                      {t("Aucun rendez-vous planifié à venir.")}
                     </p>
                   </div>
                 ) : (
@@ -787,11 +791,11 @@ function PatientDashboard() {
                         <div className="flex items-center gap-3 self-end sm:self-auto">
                           {apt.status === "en_attente" ? (
                             <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-600 text-xs rounded-full font-medium">
-                              En attente d'approbation
+                              {t("En attente d'approbation")}
                             </span>
                           ) : apt.status === "confirme" ? (
                             <span className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-xs rounded-full font-medium flex items-center gap-1">
-                              <CheckCircle2 className="size-3" /> Confirmé
+                              <CheckCircle2 className="size-3" /> {t("Confirmé")}
                             </span>
                           ) : (
                             <span className="px-3 py-1 bg-muted border text-muted-foreground text-xs rounded-full font-medium flex items-center gap-1">
@@ -810,13 +814,13 @@ function PatientDashboard() {
                 <CardHeader className="p-0 mb-5">
                   <CardTitle className="text-lg font-bold text-[color:var(--navy)] flex items-center gap-2">
                     <Activity className="size-5 text-[color:var(--mint)]" />
-                    Historique des consultations
+                    {t("Historique des consultations")}
                   </CardTitle>
                 </CardHeader>
 
                 {pastAppointments.length === 0 ? (
                   <p className="text-muted-foreground text-sm text-center py-6">
-                    Aucun historique disponible.
+                    {t("Aucun historique disponible.")}
                   </p>
                 ) : (
                   <div className="space-y-3">
@@ -831,14 +835,14 @@ function PatientDashboard() {
                               {apt.practitioner?.full_name || "-"}
                             </p>
                             <p className="text-xs text-muted-foreground mt-0.5">
-                              Le{" "}
+                              {t("Le")}{" "}
                               {format(new Date(apt.scheduled_at), "dd MMMM yyyy à HH:mm", {
                                 locale: fr,
                               })}
                             </p>
                           </div>
                           <span className="px-3 py-1 bg-muted border text-muted-foreground text-xs rounded-full font-medium">
-                            {apt.status === "termine" ? "Complété" : apt.status}
+                            {apt.status === "termine" ? t("Complété") : apt.status}
                           </span>
                         </div>
                       </div>
@@ -854,10 +858,10 @@ function PatientDashboard() {
           <Card className="rounded-3xl border bg-card p-6 shadow-sm">
             <CardHeader className="p-0 mb-6">
               <CardTitle className="text-xl font-bold text-[color:var(--navy)] flex items-center gap-2">
-                <FileText className="size-5 text-[color:var(--mint)]" /> Mes factures
+                <FileText className="size-5 text-[color:var(--mint)]" /> {t("Mes factures")}
               </CardTitle>
               <CardDescription className="text-muted-foreground">
-                Retrouvez vos factures et téléchargez-les au format PDF.
+                {t("Retrouvez vos factures et téléchargez-les au format PDF.")}
               </CardDescription>
             </CardHeader>
 
@@ -868,10 +872,10 @@ function PatientDashboard() {
                   className="flex items-center gap-4 p-4 rounded-2xl border justify-between"
                 >
                   <div className="flex-1">
-                    <p className="font-semibold text-[color:var(--navy)]">Facture {f.invoice_no}</p>
+                    <p className="font-semibold text-[color:var(--navy)]">{t("Facture")} {f.invoice_no}</p>
                     <p className="text-xs text-muted-foreground">
                       {format(new Date(f.created_at), "dd/MM/yyyy", { locale: fr })} · Total{" "}
-                      {Number(f.total ?? 0).toFixed(2)} XAF
+                      {formatFcfa(Number(f.total ?? 0))}
                     </p>
                   </div>
                   <span
@@ -883,22 +887,22 @@ function PatientDashboard() {
                     type="button"
                     onClick={() => setActiveInvoice(f)}
                     className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border hover:bg-muted"
-                    title="Voir les détails"
+                    title={t("Voir les détails")}
                   >
-                    <FileText className="size-4" /> Voir
+                    <FileText className="size-4" /> {t("Voir")}
                   </button>
                   <button
                     type="button"
                     onClick={() => openInvoiceForDownload(f)}
                     className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border hover:bg-muted"
-                    title="Télécharger en PDF"
+                    title={t("Télécharger en PDF")}
                   >
                     <Download className="size-4" /> PDF
                   </button>
                 </div>
               ))}
               {!loading && invoices.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucune facture disponible.</p>
+                <p className="text-sm text-muted-foreground">{t("Aucune facture disponible.")}</p>
               ) : null}
             </div>
           </Card>
@@ -920,14 +924,14 @@ function PatientDashboard() {
                   <h3 className="text-xl font-bold text-[color:var(--navy)]">
                     {patient ? `${patient.first_name} ${patient.last_name}` : "-"}
                   </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">Dossier médical unifié 2KC</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t("Dossier médical unifié 2KC")}</p>
                 </div>
               </div>
 
               <div className="mt-8 space-y-4 border-t border-border/60 pt-6">
                 <div>
                   <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
-                    Date de Naissance
+                    {t("Date de Naissance")}
                   </p>
                   <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">
                     {patient?.birth_date
@@ -937,7 +941,7 @@ function PatientDashboard() {
                 </div>
                 <div>
                   <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
-                    E-mail
+                    {t("E-mail")}
                   </p>
                   <p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">
                     {authEmail ?? "-"}
@@ -945,7 +949,7 @@ function PatientDashboard() {
                 </div>
                 <div>
                   <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
-                    Téléphone
+                    {t("Téléphone")}
                   </p>
                   {patient?.phone ? (<a href={whatsappUrlFor(patient.phone)} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[color:var(--navy)] mt-0.5 inline-flex hover:underline">{patient.phone}</a>) : (<p className="text-sm font-semibold text-[color:var(--navy)] mt-0.5">-</p>)}
                 </div>
@@ -961,11 +965,11 @@ function PatientDashboard() {
                     <span className="p-2 rounded-xl bg-red-500/10 text-red-600">
                       <AlertTriangle className="size-4" />
                     </span>
-                    <h3 className="font-bold text-[color:var(--navy)]">Allergies connues</h3>
+                    <h3 className="font-bold text-[color:var(--navy)]">{t("Allergies connues")}</h3>
                   </div>
                   <div className="space-y-2">
                     {(patient?.allergies ?? []).length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Aucune allergie renseignée.</p>
+                      <p className="text-sm text-muted-foreground">{t("Aucune allergie renseignée.")}</p>
                     ) : null}
                     {(patient?.allergies ?? []).map((a: string) => (
                       <div
@@ -978,7 +982,7 @@ function PatientDashboard() {
                   </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-4">
-                  Validé par l'équipe soignante
+                  {t("Validé par l'équipe soignante")}
                 </p>
               </Card>
 
@@ -989,11 +993,11 @@ function PatientDashboard() {
                     <span className="p-2 rounded-xl bg-[color:var(--navy)]/5 text-[color:var(--navy)]">
                       <Heart className="size-4" />
                     </span>
-                    <h3 className="font-bold text-[color:var(--navy)]">Antécédents médicaux</h3>
+                    <h3 className="font-bold text-[color:var(--navy)]">{t("Antécédents médicaux")}</h3>
                   </div>
                   <ul className="space-y-2">
                     {(patient?.chronic_conditions ?? []).length === 0 ? (
-                      <li className="text-sm text-muted-foreground">Aucun antécédent renseigné.</li>
+                      <li className="text-sm text-muted-foreground">{t("Aucun antécédent renseigné.")}</li>
                     ) : null}
                     {(patient?.chronic_conditions ?? []).map((h: string, i: number) => (
                       <li
@@ -1006,7 +1010,7 @@ function PatientDashboard() {
                     ))}
                   </ul>
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-4">Actualisé le 24 mai 2026</p>
+                <p className="text-[10px] text-muted-foreground mt-4">{t("Actualisé le 24 mai 2026")}</p>
               </Card>
             </div>
           </div>
@@ -1014,22 +1018,22 @@ function PatientDashboard() {
           <Card className="rounded-3xl border bg-card p-6 shadow-sm">
             <CardHeader className="p-0 mb-5">
               <CardTitle className="text-lg font-bold text-[color:var(--navy)]">
-                Compléter mon dossier médical
+                {t("Compléter mon dossier médical")}
               </CardTitle>
               <CardDescription>
-                Ces informations alimentent les cartes de votre espace patient.
+                {t("Ces informations alimentent les cartes de votre espace patient.")}
               </CardDescription>
             </CardHeader>
             <div className="grid sm:grid-cols-2 gap-4">
-              <input value={profileForm.phone} onChange={(e) => setProfileForm((f) => ({ ...f, phone: e.target.value }))} placeholder="Téléphone" className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none" />
+              <input value={profileForm.phone} onChange={(e) => setProfileForm((f) => ({ ...f, phone: e.target.value }))} placeholder={t("Téléphone")} className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none" />
               <select value={profileForm.blood_type} onChange={(e) => setProfileForm((f) => ({ ...f, blood_type: e.target.value }))} className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none">
-                <option value="">Groupe sanguin</option>
+                <option value="">{t("Groupe sanguin")}</option>
                 {["A+","A-","B+","B-","AB+","AB-","O+","O-"].map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
-              <input value={profileForm.allergies} onChange={(e) => setProfileForm((f) => ({ ...f, allergies: e.target.value }))} placeholder="Allergies, séparées par virgule" className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none sm:col-span-2" />
-              <input value={profileForm.chronic_conditions} onChange={(e) => setProfileForm((f) => ({ ...f, chronic_conditions: e.target.value }))} placeholder="Antécédents médicaux, séparés par virgule" className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none sm:col-span-2" />
+              <input value={profileForm.allergies} onChange={(e) => setProfileForm((f) => ({ ...f, allergies: e.target.value }))} placeholder={t("Allergies, séparées par virgule")} className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none sm:col-span-2" />
+              <input value={profileForm.chronic_conditions} onChange={(e) => setProfileForm((f) => ({ ...f, chronic_conditions: e.target.value }))} placeholder={t("Antécédents médicaux, séparés par virgule")} className="rounded-2xl border bg-background px-4 py-3 text-sm outline-none sm:col-span-2" />
               <Button onClick={() => void saveMedicalProfile()} className="rounded-2xl sm:col-span-2">
-                Enregistrer mon dossier
+                {t("Enregistrer mon dossier")}
               </Button>
             </div>
           </Card>
@@ -1039,7 +1043,7 @@ function PatientDashboard() {
             <CardHeader className="p-0 mb-6">
               <CardTitle className="text-lg font-bold text-[color:var(--navy)] flex items-center gap-2">
                 <Stethoscope className="size-5 text-[color:var(--mint)]" />
-                Traitements de fond actuels
+                {t("Traitements de fond actuels")}
               </CardTitle>
             </CardHeader>
             <div className="grid sm:grid-cols-2 gap-4">
@@ -1053,12 +1057,12 @@ function PatientDashboard() {
                       {m.medicine_name}
                     </h4>
                     <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
-                      <Activity className="size-3.5" /> Posologie :{" "}
+                      <Activity className="size-3.5" /> {t("Posologie :")}{" "}
                       {[m.dosage, m.frequency, m.duration].filter(Boolean).join(" · ") || "-"}
                     </p>
                   </div>
                   <span className="px-2.5 py-1 bg-[color:var(--mint)]/20 border border-[color:var(--mint)]/30 text-[color:var(--navy)] text-[10px] rounded-full font-bold uppercase tracking-wider shrink-0 shadow-sm">
-                    Actif
+                    {t("Actif")}
                   </span>
                 </div>
               ))}
@@ -1072,7 +1076,7 @@ function PatientDashboard() {
             <CardHeader className="p-0 mb-6">
               <CardTitle className="text-xl font-bold text-[color:var(--navy)] flex items-center gap-2">
                 <FileText className="size-5 text-[color:var(--mint)]" />
-                Vos ordonnances médicales
+                {t("Vos ordonnances médicales")}
               </CardTitle>
             </CardHeader>
 
@@ -1085,7 +1089,7 @@ function PatientDashboard() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
                       <h4 className="font-bold text-[color:var(--navy)] text-lg">
-                        Ordonnance du{" "}
+                        {t("Ordonnance du")}{" "}
                         {format(new Date(presc.created_at), "dd MMM yyyy", { locale: fr })}
                       </h4>
                       <span className="text-[10px] font-mono px-2 py-0.5 bg-muted text-muted-foreground rounded border">
@@ -1093,7 +1097,7 @@ function PatientDashboard() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Prescrit par {presc.practitioner?.full_name || "-"}
+                      {t("Prescrit par")} {presc.practitioner?.full_name || "-"}
                     </p>
 
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -1115,14 +1119,14 @@ function PatientDashboard() {
                       onClick={() => setActivePresc(presc)}
                       className="rounded-xl font-semibold border-border hover:border-[color:var(--mint)] hover:text-[color:var(--navy)]"
                     >
-                      <User className="size-4 mr-1.5" /> Consulter
+                      <User className="size-4 mr-1.5" /> {t("Consulter")}
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => openPrescriptionForDownload(presc)}
                       className="rounded-xl text-muted-foreground border-border hover:border-[color:var(--mint)] hover:text-[color:var(--navy)]"
-                      title="Télécharger l'ordonnance en PDF"
+                      title={t("Télécharger l'ordonnance en PDF")}
                     >
                       <Download className="size-4" />
                     </Button>
@@ -1159,7 +1163,7 @@ function PatientDashboard() {
                     2KC
                   </div>
                   <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mt-1">
-                    Centre de Santé Pluridisciplinaire
+                    {t("Centre de Santé Pluridisciplinaire")}
                   </p>
                   <p className="text-xs text-slate-400 mt-1">Douala, Cameroun • Tél: <a href={whatsappUrlFor()} target="_blank" rel="noreferrer" className="hover:underline">693904197</a></p>
                 </div>
@@ -1167,7 +1171,7 @@ function PatientDashboard() {
                   <p className="font-bold text-slate-800">
                     {activePresc.practitioner?.full_name || "-"}
                   </p>
-                  <p>Médecin généraliste</p>
+                  <p>{t("Médecin généraliste")}</p>
                   <p className="mt-1 font-mono text-[10px] text-slate-400">RPPS: 10009876543</p>
                 </div>
               </div>
@@ -1175,13 +1179,13 @@ function PatientDashboard() {
               {/* Patient info on Rx */}
               <div className="mt-6 flex justify-between text-sm">
                 <div>
-                  <span className="text-slate-400">Patient : </span>
+                  <span className="text-slate-400">{t("Patient :")} </span>
                   <span className="font-bold text-slate-800">
                     {patient ? `${patient.first_name} ${patient.last_name}` : "-"}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400">Date : </span>
+                  <span className="text-slate-400">{t("Date :")} </span>
                   <span className="font-medium text-slate-800">
                     {format(new Date(activePresc.created_at), "dd/MM/yyyy", { locale: fr })}
                   </span>
@@ -1207,7 +1211,7 @@ function PatientDashboard() {
 
                 {activePresc.notes && (
                   <p className="text-xs text-slate-500 border-t border-slate-100 pt-4 mt-6 leading-relaxed italic">
-                    Note : {activePresc.notes}
+                    {t("Note :")} {activePresc.notes}
                   </p>
                 )}
               </div>
@@ -1216,11 +1220,11 @@ function PatientDashboard() {
               <div className="mt-10 pt-6 border-t border-slate-200 flex justify-between items-end">
                 <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
                   <ShieldCheck className="size-4 text-emerald-500 shrink-0" />
-                  Ordonnance signée numériquement
+                  {t("Ordonnance signée numériquement")}
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">
-                    Signature & Cachet
+                    {t("Signature & Cachet")}
                   </p>
                   <div className="size-16 rounded-full border-2 border-emerald-600/30 text-emerald-700/60 flex items-center justify-center font-serif text-[10px] rotate-12 select-none border-dashed mx-auto mb-2 uppercase font-bold shrink-0">
                     2KC SANTE
@@ -1238,13 +1242,13 @@ function PatientDashboard() {
                   onClick={() => setActivePresc(null)}
                   className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-100"
                 >
-                  Fermer
+                  {t("Fermer")}
                 </Button>
                 <Button
                   onClick={() => openPrescriptionForDownload(activePresc)}
                   className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 border-none"
                 >
-                  <Download className="size-4" /> Télécharger PDF
+                  <Download className="size-4" /> {t("Télécharger PDF")}
                 </Button>
               </div>
             </motion.div>
@@ -1270,12 +1274,12 @@ function PatientDashboard() {
                     2KC
                   </div>
                   <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mt-1">
-                    Centre de Santé Pluridisciplinaire
+                    {t("Centre de Santé Pluridisciplinaire")}
                   </p>
                   <p className="text-xs text-slate-400 mt-1">Douala, Cameroun • Tél: <a href={whatsappUrlFor()} target="_blank" rel="noreferrer" className="hover:underline">693904197</a></p>
                 </div>
                 <div className="text-left sm:text-right text-xs text-slate-500">
-                  <p className="font-bold text-slate-800">Facture {activeInvoice.invoice_no}</p>
+                  <p className="font-bold text-slate-800">{t("Facture")} {activeInvoice.invoice_no}</p>
                   <p>
                     Date: {format(new Date(activeInvoice.created_at), "dd/MM/yyyy", { locale: fr })}
                   </p>
@@ -1285,23 +1289,23 @@ function PatientDashboard() {
               <div className="mt-6 text-sm">
                 <div className="flex justify-between">
                   <div>
-                    <span className="text-slate-400">Patient : </span>
+                    <span className="text-slate-400">{t("Patient :")} </span>
                     <span className="font-bold text-slate-800">
                       {patient ? `${patient.first_name} ${patient.last_name}` : "-"}
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-400">Statut : </span>
+                    <span className="text-slate-400">{t("Statut :")} </span>
                     <span className="font-semibold text-slate-800">{activeInvoice.status}</span>
                   </div>
                 </div>
 
                 <div className="mt-6 rounded-xl border">
                   <div className="grid grid-cols-6 gap-2 px-4 py-2 text-[11px] text-slate-500 border-b bg-slate-50">
-                    <div className="col-span-3">Désignation</div>
-                    <div className="text-right">Qté</div>
-                    <div className="text-right">PU</div>
-                    <div className="text-right">Total</div>
+                    <div className="col-span-3">{t("Désignation")}</div>
+                    <div className="text-right">{t("Qté")}</div>
+                    <div className="text-right">{t("PU")}</div>
+                    <div className="text-right">{t("Total")}</div>
                   </div>
                   <div className="divide-y">
                     {(activeInvoice.items ?? []).map((li: any, i: number) => (
@@ -1314,7 +1318,7 @@ function PatientDashboard() {
                     ))}
                     {(activeInvoice.items ?? []).length === 0 ? (
                       <div className="px-4 py-3 text-sm text-muted-foreground">
-                        Aucun détail disponible.
+                        {t("Aucun détail disponible.")}
                       </div>
                     ) : null}
                   </div>
@@ -1323,9 +1327,9 @@ function PatientDashboard() {
                 <div className="mt-4 flex justify-end">
                   <div className="text-sm">
                     <div className="flex justify-between gap-8">
-                      <span className="text-slate-500">Total</span>
+                      <span className="text-slate-500">{t("Total")}</span>
                       <span className="font-bold text-slate-800">
-                        {Number(activeInvoice.total ?? 0).toFixed(2)} XAF
+                        {formatFcfa(Number(activeInvoice.total ?? 0))}
                       </span>
                     </div>
                   </div>
@@ -1338,13 +1342,13 @@ function PatientDashboard() {
                   onClick={() => setActiveInvoice(null)}
                   className="rounded-xl border-slate-200 text-slate-600 hover:bg-slate-100"
                 >
-                  Fermer
+                  {t("Fermer")}
                 </Button>
                 <Button
                   onClick={() => openInvoiceForDownload(activeInvoice)}
                   className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 border-none"
                 >
-                  <Download className="size-4" /> Télécharger PDF
+                  <Download className="size-4" /> {t("Télécharger PDF")}
                 </Button>
               </div>
             </motion.div>
@@ -1354,4 +1358,3 @@ function PatientDashboard() {
     </DashboardLayout>
   );
 }
-

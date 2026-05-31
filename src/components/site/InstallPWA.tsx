@@ -16,6 +16,13 @@ export function InstallPWA() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+      void navigator.serviceWorker?.getRegistrations?.().then((registrations) =>
+        Promise.all(registrations.map((registration) => registration.unregister())),
+      );
+      void window.caches?.keys?.().then((keys) => Promise.all(keys.map((key) => window.caches.delete(key))));
+      return;
+    }
 
     // Déjà installée (mode standalone) → ne rien afficher
     const standalone =
@@ -84,7 +91,7 @@ export function InstallPWA() {
   return (
     <div className="fixed inset-x-3 bottom-3 z-[60] sm:left-auto sm:right-4 sm:bottom-4 sm:w-[380px]">
       <div className="rounded-2xl border bg-card shadow-lg overflow-hidden">
-        {showIOSHelp ? (
+        {showIOSHelp || isIOS ? (
           <div className="p-4">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm font-bold text-[color:var(--navy)]">

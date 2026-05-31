@@ -59,6 +59,15 @@ function AdminUsers() {
     return users.filter((u) => `${u.email} ${u.full_name} ${u.role}`.toLowerCase().includes(needle));
   }, [query, users]);
 
+  const hasSecretary = useMemo(() => users.some((u) => u.role === "secretaire"), [users]);
+  const hasPharmacien = useMemo(() => users.some((u) => u.role === "pharmacien"), [users]);
+  const hasDirecteur = useMemo(() => users.some((u) => u.role === "directeur"), [users]);
+  const hasComptable = useMemo(() => users.some((u) => u.role === "comptable"), [users]);
+  const secretaryEmail = "secretaire@gmail.com";
+  const pharmacienEmail = "patientdjappa@gmail.com";
+  const directeurEmail = "taffb6866@gmail.com";
+  const comptableEmail = "kemzeugillesparfait@gmail.com";
+
   useEffect(() => {
     void loadUsers();
   }, []);
@@ -91,6 +100,23 @@ function AdminUsers() {
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = fullName.trim();
     if (!cleanEmail || !cleanName) return;
+
+    if (role === "secretaire") {
+      if (cleanEmail !== secretaryEmail) return toast.error(`Le compte secrétaire doit utiliser l'email ${secretaryEmail}.`);
+      if (hasSecretary) return toast.error("Un compte secrétaire existe déjà.");
+    }
+    if (role === "pharmacien") {
+      if (cleanEmail !== pharmacienEmail) return toast.error(`Le compte pharmacien doit utiliser l'email ${pharmacienEmail}.`);
+      if (hasPharmacien) return toast.error("Un compte pharmacien existe déjà.");
+    }
+    if (role === "directeur") {
+      if (cleanEmail !== directeurEmail) return toast.error(`Le compte directeur doit utiliser l'email ${directeurEmail}.`);
+      if (hasDirecteur) return toast.error("Un compte directeur existe déjà.");
+    }
+    if (role === "comptable") {
+      if (cleanEmail !== comptableEmail) return toast.error(`Le compte comptable doit utiliser l'email ${comptableEmail}.`);
+      if (hasComptable) return toast.error("Un compte comptable existe déjà.");
+    }
 
     setCreating(true);
     setActionMsg(null);
@@ -143,6 +169,23 @@ function AdminUsers() {
   async function saveEdit(userId: string) {
     setWorkingId(userId);
     try {
+      const newEmail = editForm.email.trim().toLowerCase();
+      if (editForm.role === "secretaire") {
+        if (newEmail !== secretaryEmail) throw new Error(`Le compte secrétaire doit utiliser l'email ${secretaryEmail}.`);
+        if (users.some((u) => u.id !== userId && u.role === "secretaire")) throw new Error("Un compte secrétaire existe déjà.");
+      }
+      if (editForm.role === "pharmacien") {
+        if (newEmail !== pharmacienEmail) throw new Error(`Le compte pharmacien doit utiliser l'email ${pharmacienEmail}.`);
+        if (users.some((u) => u.id !== userId && u.role === "pharmacien")) throw new Error("Un compte pharmacien existe déjà.");
+      }
+      if (editForm.role === "directeur") {
+        if (newEmail !== directeurEmail) throw new Error(`Le compte directeur doit utiliser l'email ${directeurEmail}.`);
+        if (users.some((u) => u.id !== userId && u.role === "directeur")) throw new Error("Un compte directeur existe déjà.");
+      }
+      if (editForm.role === "comptable") {
+        if (newEmail !== comptableEmail) throw new Error(`Le compte comptable doit utiliser l'email ${comptableEmail}.`);
+        if (users.some((u) => u.id !== userId && u.role === "comptable")) throw new Error("Un compte comptable existe déjà.");
+      }
       await invokeAdmin({ op: "update_user", user_id: userId, ...editForm });
       toast.success("Utilisateur mis à jour.");
       setEditingId(null);
@@ -180,6 +223,10 @@ function AdminUsers() {
   }
 
   async function deleteUser(user: AppUser) {
+    if (["secretaire", "pharmacien", "directeur", "comptable"].includes(user.role as any)) {
+      toast.error("Ce compte est requis par le système et ne peut pas être supprimé.");
+      return;
+    }
     if (!window.confirm(`Supprimer ${user.email} ?`)) return;
     setWorkingId(user.id);
     try {
@@ -218,11 +265,17 @@ function AdminUsers() {
             </Field>
             <Field label="Rôle">
               <select value={role} onChange={(e) => setRole(e.target.value as RoleId)} className={inputClass}>
-                {ROLES.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
+                {ROLES.map((r) => {
+                  if (r.id === "secretaire" && hasSecretary) return null;
+                  if (r.id === "pharmacien" && hasPharmacien) return null;
+                  if (r.id === "directeur" && hasDirecteur) return null;
+                  if (r.id === "comptable" && hasComptable) return null;
+                  return (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  );
+                })}
               </select>
             </Field>
 
@@ -283,8 +336,21 @@ function AdminUsers() {
                         </td>
                         <td className="py-3 pr-3">
                           {editing ? (
-                            <select value={editForm.role} onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value as RoleId }))} className={smallInputClass}>
-                              {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                            <select
+                              value={editForm.role}
+                              onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value as RoleId }))}
+                              className={smallInputClass}
+                            >
+                              {ROLES.map((r) => {
+                                // Empêcher d'assigner ces rôles s'ils existent déjà
+                                if (r.id === "secretaire" && hasSecretary && users.find((u) => u.id !== editingId && u.role === "secretaire")) return null;
+                                if (r.id === "pharmacien" && hasPharmacien && users.find((u) => u.id !== editingId && u.role === "pharmacien")) return null;
+                                if (r.id === "directeur" && hasDirecteur && users.find((u) => u.id !== editingId && u.role === "directeur")) return null;
+                                if (r.id === "comptable" && hasComptable && users.find((u) => u.id !== editingId && u.role === "comptable")) return null;
+                                return (
+                                  <option key={r.id} value={r.id}>{r.label}</option>
+                                );
+                              })}
                             </select>
                           ) : (
                             <span className="rounded-full border bg-muted/40 px-2 py-1 text-xs">{ROLES.find((r) => r.id === user.role)?.label ?? user.role}</span>
@@ -307,7 +373,13 @@ function AdminUsers() {
                             <button type="button" disabled={busy} onClick={() => void resetPassword(user)} className={iconButtonClass} title="Réinitialiser le mot de passe">
                               <KeyRound className="size-4" />
                             </button>
-                            <button type="button" disabled={busy} onClick={() => void deleteUser(user)} className={`${iconButtonClass} text-red-600`} title="Supprimer">
+                            <button
+                              type="button"
+                              disabled={busy || ["secretaire","pharmacien","directeur","comptable"].includes(user.role as any)}
+                              onClick={() => void deleteUser(user)}
+                              className={`${iconButtonClass} text-red-600`}
+                              title="Supprimer"
+                            >
                               <Trash2 className="size-4" />
                             </button>
                           </div>

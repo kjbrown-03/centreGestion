@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { stockReorderAdvice } from "@/lib/ai";
+import { useT } from "@/lib/i18n";
+import { formatFcfa } from "@/lib/currency";
 
 export const Route = createFileRoute("/pharmacien")({ component: PharmacienHome });
 
@@ -27,6 +29,7 @@ type Prescription = {
 };
 
 function PharmacienHome() {
+  const t = useT();
   const [meds, setMeds] = useState<Medicine[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,7 +108,7 @@ function PharmacienHome() {
       const supabase = getSupabase();
       const authUser = (await supabase.auth.getUser()).data.user;
       const sb: any = supabase;
-      if (!authUser?.id) throw new Error("Session introuvable.");
+      if (!authUser?.id) throw new Error(t("Session introuvable."));
 
       const { error: dErr } = await sb.schema("app").from("dispensations").insert({
         prescription_id: presc.id,
@@ -195,9 +198,9 @@ function PharmacienHome() {
           return { ...m, stock: Math.max(0, m.stock - qty) };
         }),
       );
-      toast.success("Prescription délivrée, stock mis à jour et facture générée.");
+      toast.success(t("Prescription délivrée, stock mis à jour et facture générée."));
     } catch (err: any) {
-      toast.error(err?.message ?? "Délivrance impossible.");
+      toast.error(err?.message ?? t("Délivrance impossible."));
     }
   }
 
@@ -209,28 +212,28 @@ function PharmacienHome() {
       );
       setAdvice(txt);
     } catch (err: any) {
-      toast.error(err?.message ?? "Service indisponible.");
+      toast.error(err?.message ?? t("Service indisponible."));
     } finally {
       setAiLoading(false);
     }
   }
 
   return (
-    <DashboardLayout allow="pharmacien" title="Pharmacie & délivrance">
+    <DashboardLayout allow="pharmacien" title={t("Pharmacie & délivrance")}>
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
         <StatCard
-          label="Prescriptions actives"
+          label={t("Prescriptions actives")}
           value={loading ? "..." : String(prescriptions.length)}
           icon={FileText}
           accent
         />
         <StatCard
-          label="Alertes stock"
+          label={t("Alertes stock")}
           value={loading ? "..." : String(lowStock.length)}
           icon={AlertTriangle}
         />
         <StatCard
-          label="Références pharmacie"
+          label={t("Références pharmacie")}
           value={loading ? "..." : String(meds.length)}
           icon={Pill}
         />
@@ -240,10 +243,10 @@ function PharmacienHome() {
         <div className="xl:col-span-2 rounded-3xl border bg-card p-4 sm:p-7">
           <div>
             <h3 className="text-lg font-bold text-[color:var(--navy)] flex items-center gap-2">
-              <FileText className="size-5 text-[color:var(--mint)]" /> Prescriptions actives
+              <FileText className="size-5 text-[color:var(--mint)]" /> {t("Prescriptions actives")}
             </h3>
             <p className="text-sm text-muted-foreground">
-              À délivrer puis marquer comme traitée. La facture est générée automatiquement.
+              {t("À délivrer puis marquer comme traitée. La facture est générée automatiquement.")}
             </p>
           </div>
 
@@ -253,11 +256,11 @@ function PharmacienHome() {
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="font-semibold text-[color:var(--navy)]">
-                      {p.patient ? `${p.patient.first_name} ${p.patient.last_name}` : "Patient"}
+                      {p.patient ? `${p.patient.first_name} ${p.patient.last_name}` : t("Patient")}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(p.created_at).toLocaleString()} —{" "}
-                      {p.practitioner?.full_name ?? "Médecin"}
+                      {p.practitioner?.full_name ?? t("Médecin")}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {(p.items ?? []).map((it) => (
@@ -276,14 +279,14 @@ function PharmacienHome() {
                     onClick={() => void dispensePrescription(p)}
                     className="inline-flex items-center justify-center gap-2 rounded-2xl gradient-mint px-4 py-2.5 text-sm font-semibold text-[color:var(--navy)] shrink-0"
                   >
-                    <CheckCircle2 className="size-4" /> Délivrer
+                    <CheckCircle2 className="size-4" /> {t("Délivrer")}
                   </button>
                 </div>
               </div>
             ))}
             {!loading && prescriptions.length === 0 ? (
               <div className="rounded-2xl border bg-muted/30 p-5 text-sm text-muted-foreground">
-                Aucune prescription active.
+                {t("Aucune prescription active.")}
               </div>
             ) : null}
           </div>
@@ -293,16 +296,16 @@ function PharmacienHome() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-bold text-[color:var(--navy)] flex items-center gap-2">
-                <Pill className="size-5 text-[color:var(--mint)]" /> Stock pharmacie
+                <Pill className="size-5 text-[color:var(--mint)]" /> {t("Stock pharmacie")}
               </h3>
               <p className="text-sm text-muted-foreground">
-                Consultation du stock, édition réservée à l'admin.
+                {t("Consultation du stock, édition réservée à l'admin.")}
               </p>
             </div>
             <div className="flex items-center gap-2">
               {lowStock.length > 0 && (
                 <span className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full bg-amber-500/10 text-amber-700 border border-amber-500/20">
-                  <AlertTriangle className="size-4" /> {lowStock.length} alerte(s)
+                  <AlertTriangle className="size-4" /> {lowStock.length} {t("alerte(s)")}
                 </span>
               )}
               <button
@@ -311,7 +314,7 @@ function PharmacienHome() {
                 disabled={aiLoading}
                 className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border hover:bg-muted disabled:opacity-60"
               >
-                <Sparkles className="size-4 text-[color:var(--mint)]" /> Recommander
+                <Sparkles className="size-4 text-[color:var(--mint)]" /> {t("Recommander")}
               </button>
             </div>
           </div>
@@ -322,11 +325,11 @@ function PharmacienHome() {
             </div>
           )}
 
-          {loading && <p className="text-center text-muted-foreground mt-10">Chargement...</p>}
+          {loading && <p className="text-center text-muted-foreground mt-10">{t("Chargement...")}</p>}
 
           {advice ? (
             <div className="mt-6 rounded-2xl border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
-              <p className="font-semibold text-[color:var(--navy)] mb-2">Recommandations</p>
+              <p className="font-semibold text-[color:var(--navy)] mb-2">{t("Recommandations")}</p>
               {advice}
             </div>
           ) : null}
@@ -334,7 +337,7 @@ function PharmacienHome() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filtrer les médicaments..."
+            placeholder={t("Filtrer les médicaments...")}
             className="mt-6 w-full rounded-xl border bg-background px-3.5 py-2.5 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
           />
 
@@ -351,11 +354,11 @@ function PharmacienHome() {
                       {m.stock}
                     </p>
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      unités
+                      {t("unités")}
                     </p>
                   </div>
                   <p className="text-sm font-semibold text-[color:var(--navy)]">
-                    {m.price.toLocaleString("fr-FR")} FCFA
+                    {formatFcfa(m.price)}
                   </p>
                 </div>
               </div>

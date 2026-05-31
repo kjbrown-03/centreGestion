@@ -2,17 +2,21 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth, type Role } from "@/lib/store";
+import { useT, useI18n } from "@/lib/i18n";
 import { roleLabel } from "@/lib/roles";
 import { getSupabaseAsync } from "@/lib/supabase";
 import { medicalChatbot } from "@/lib/ai";
+import { formatFcfa } from "@/lib/currency";
 import {
   Activity,
   Bell,
   Bot,
   Calendar,
   ClipboardList,
+  Download,
   FileText,
   HeartPulse,
+  Languages,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -34,6 +38,7 @@ const NAV: Record<Role, NavItem[]> = {
     { to: "/admin", label: "Tableau de bord", icon: LayoutDashboard },
     { to: "/admin/utilisateurs", label: "Utilisateurs", icon: Users },
     { to: "/admin/pharmacie", label: "Pharmacie", icon: Pill },
+    { to: "/admin/suivi-pharmacie", label: "Suivi des stocks", icon: ClipboardList },
   ],
   medecin: [{ to: "/medecin", label: "Consultations", icon: Stethoscope }],
   infirmier: [{ to: "/infirmier", label: "Soins du jour", icon: HeartPulse }],
@@ -55,10 +60,14 @@ export function DashboardLayout({
 }) {
   const user = useAuth((s: { user: any }) => s.user);
   const logout = useAuth((s: { logout: () => void }) => s.logout);
+  const t = useT();
+  const lang = useI18n((s) => s.lang);
+  const toggleLang = useI18n((s) => s.toggleLang);
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const locationSearch = useRouterState({ select: (s) => s.location.search });
 
+  const [pwaPrompt, setPwaPrompt] = useState<any>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState<string | null>(null);
@@ -97,7 +106,7 @@ export function DashboardLayout({
       {
         id: "welcome",
         role: "assistant",
-        text: proactiveIntro(user.role),
+        text: t(proactiveIntro(user.role)),
       },
     ]);
   }, [user?.role, user?.email]);
@@ -128,7 +137,7 @@ export function DashboardLayout({
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          text: err?.message ?? "Chatbot médical indisponible pour le moment.",
+          text: err?.message ?? t("Chatbot médical indisponible pour le moment."),
         },
       ]);
     } finally {
@@ -145,8 +154,20 @@ export function DashboardLayout({
     }
   }, [locationSearch]);
 
+  // Capture l'événement beforeinstallprompt pour le bouton d'installation PWA
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const standalone = window.matchMedia?.("(display-mode: standalone)").matches || (window.navigator as any).standalone;
+    if (standalone) return;
+    const handler = (e: Event) => { e.preventDefault(); setPwaPrompt(e); };
+    window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("appinstalled", () => setPwaPrompt(null));
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
   function defaultSearchRouteForRole(r: Role): string {
     if (path?.startsWith("/admin/pharmacie")) return "/admin/pharmacie";
+    if (path?.startsWith("/admin/suivi-pharmacie")) return "/admin/suivi-pharmacie";
     if (path?.startsWith("/admin/utilisateurs")) return "/admin/utilisateurs";
     if (path?.startsWith("/admin/patients")) return "/admin/patients";
     if (path?.startsWith("/admin/rendez-vous")) return "/admin/rendez-vous";
@@ -197,12 +218,33 @@ export function DashboardLayout({
         const authUserId = authUser?.id;
 
         if (role === "admin") {
-          const { data, error } = await sb.schema("app").from("profiles").select("user_id, full_name, role, created_at").order("created_at", { ascending: false }).limit(5);
-          if (error) throw error;
-          if (alive) setMessages((data ?? []).map((r: any) => ({ id: `profile-${r.user_id}`, at: String(r.created_at ?? ""), text: `Nouvel utilisateur: ${r.full_name ?? "Utilisateur"} (${r.role})` })));
-          channels.push(supabase.channel(`notify_profiles_${Date.now()}`).on("postgres_changes", { event: "INSERT", schema: "app", table: "profiles" }, (payload: any) => {
+          const [profiles, stock, prescriptions] = await Promise.all([
+            sb.schema("app").from("profiles").select("user_id, full_name, role, created_at").order("created_at", { ascending: false }).limit(3),
+            sb.schema("app").from("stock_items").select("id, name, stock, threshold, updated_at").eq("kind", "pharmacy").order("updated_at", { ascending: false }).limit(20),
+            sb.schema("app").from("prescriptions").select("id, created_at, status").order("created_at", { ascending: false }).limit(3),
+          ]);
+          if (profiles.error) throw profiles.error;
+          if (stock.error) throw stock.error;
+          if (prescriptions.error) throw prescriptions.error;
+          if (alive) {
+            setMessages([
+              ...(stock.data ?? [])
+                .filter((r: any) => Number(r.stock ?? 0) <= Number(r.threshold ?? 0))
+                .slice(0, 3)
+                .map((r: any) => ({ id: `admin-stock-${r.id}`, at: String(r.updated_at ?? ""), text: `Alerte pharmacie: ${r.name} (${r.stock}/${r.threshold})` })),
+              ...(prescriptions.data ?? []).map((r: any) => ({ id: `admin-presc-${r.id}`, at: String(r.created_at ?? ""), text: `Ordonnance ${r.status ?? "active"} a suivre` })),
+              ...(profiles.data ?? []).map((r: any) => ({ id: `profile-${r.user_id}`, at: String(r.created_at ?? ""), text: `Nouvel utilisateur: ${r.full_name ?? "Utilisateur"} (${r.role})` })),
+            ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 5));
+          }
+          channels.push(supabase.channel(`notify_admin_${Date.now()}`).on("postgres_changes", { event: "INSERT", schema: "app", table: "profiles" }, (payload: any) => {
             const n = payload?.new;
             if (n?.user_id) pushMessage({ id: `profile-${n.user_id}`, at: String(n.created_at ?? ""), text: `Nouvel utilisateur: ${n.full_name ?? "Utilisateur"} (${n.role})` });
+          }).on("postgres_changes", { event: "*", schema: "app", table: "stock_items" }, (payload: any) => {
+            const n = payload?.new;
+            if (n?.id && n.kind === "pharmacy" && Number(n.stock ?? 0) <= Number(n.threshold ?? 0)) pushMessage({ id: `admin-stock-${n.id}`, at: String(n.updated_at ?? ""), text: `Alerte pharmacie: ${n.name} (${n.stock}/${n.threshold})` });
+          }).on("postgres_changes", { event: "INSERT", schema: "app", table: "prescriptions" }, (payload: any) => {
+            const n = payload?.new;
+            if (n?.id) pushMessage({ id: `admin-presc-${n.id}`, at: String(n.created_at ?? ""), text: "Nouvelle ordonnance emise" });
           }).subscribe());
         } else if (role === "secretaire") {
           const { data, error } = await sb.schema("app").from("appointments").select("id, created_at, scheduled_at, status, reason, patient:patient_id(first_name,last_name)").order("created_at", { ascending: false }).limit(5);
@@ -259,7 +301,7 @@ export function DashboardLayout({
         } else if (role === "comptable") {
           const { data, error } = await sb.schema("app").from("invoices").select("id, invoice_no, status, total, created_at").order("created_at", { ascending: false }).limit(5);
           if (error) throw error;
-          if (alive) setMessages((data ?? []).map((r: any) => ({ id: `invoice-${r.id}`, at: String(r.created_at ?? ""), text: `Facture ${r.invoice_no ?? ""}: ${Number(r.total ?? 0).toLocaleString("fr-FR")} FCFA (${r.status})` })));
+          if (alive) setMessages((data ?? []).map((r: any) => ({ id: `invoice-${r.id}`, at: String(r.created_at ?? ""), text: `Facture ${r.invoice_no ?? ""}: ${formatFcfa(Number(r.total ?? 0))} (${r.status})` })));
           channels.push(supabase.channel(`notify_invoices_${Date.now()}`).on("postgres_changes", { event: "INSERT", schema: "app", table: "invoices" }, (payload: any) => {
             const n = payload?.new;
             if (n?.id) pushMessage({ id: `invoice-${n.id}`, at: String(n.created_at ?? ""), text: `Nouvelle facture: ${n.invoice_no ?? ""}` });
@@ -276,7 +318,7 @@ export function DashboardLayout({
           if (alive) {
             setMessages([
               ...(appts.data ?? []).map((r: any) => ({ id: `dir-appt-${r.id}`, at: String(r.created_at ?? r.scheduled_at ?? ""), text: `RDV ${r.status}: ${r.reason ?? "Consultation"}` })),
-              ...(invoices.data ?? []).map((r: any) => ({ id: `dir-invoice-${r.id}`, at: String(r.created_at ?? ""), text: `Facture ${r.invoice_no ?? ""}: ${Number(r.total ?? 0).toLocaleString("fr-FR")} FCFA (${r.status})` })),
+              ...(invoices.data ?? []).map((r: any) => ({ id: `dir-invoice-${r.id}`, at: String(r.created_at ?? ""), text: `Facture ${r.invoice_no ?? ""}: ${formatFcfa(Number(r.total ?? 0))} (${r.status})` })),
               ...(stock.data ?? [])
                 .filter((r: any) => Number(r.stock ?? 0) <= Number(r.threshold ?? 0))
                 .slice(0, 2)
@@ -323,7 +365,7 @@ export function DashboardLayout({
             setMessages([
               ...(appts.data ?? []).map((r: any) => ({ id: `patient-appt-${r.id}`, at: String(r.created_at ?? r.scheduled_at ?? ""), text: `Rendez-vous ${r.status}: ${r.reason ?? "Consultation"}` })),
               ...(prescs.data ?? []).map((r: any) => ({ id: `patient-presc-${r.id}`, at: String(r.created_at ?? ""), text: `Ordonnance ${r.status ?? "créée"}` })),
-              ...(invoices.data ?? []).map((r: any) => ({ id: `patient-invoice-${r.id}`, at: String(r.created_at ?? ""), text: `Facture ${r.invoice_no ?? ""}: ${Number(r.total ?? 0).toLocaleString("fr-FR")} FCFA (${r.status})` })),
+              ...(invoices.data ?? []).map((r: any) => ({ id: `patient-invoice-${r.id}`, at: String(r.created_at ?? ""), text: `Facture ${r.invoice_no ?? ""}: ${formatFcfa(Number(r.total ?? 0))} (${r.status})` })),
             ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 5));
           }
           channels.push(supabase.channel(`notify_patient_${pid}_${Date.now()}`).on("postgres_changes", { event: "*", schema: "app", table: "appointments", filter: `patient_id=eq.${pid}` }, (payload: any) => {
@@ -343,7 +385,7 @@ export function DashboardLayout({
           if (alive) setMessages([]);
         }
       } catch (e: any) {
-        if (alive) setNotifError(e?.message ?? "Impossible de charger les notifications.");
+        if (alive) setNotifError(e?.message ?? t("Impossible de charger les notifications."));
       } finally {
         if (alive) setNotifLoading(false);
       }
@@ -387,7 +429,7 @@ export function DashboardLayout({
               >
                 {active ? <motion.span layoutId="active-pill" className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full bg-[color:var(--mint)]" /> : null}
                 <it.icon className="size-4" />
-                {it.label}
+                {t(it.label)}
               </Link>
             );
           })}
@@ -408,7 +450,7 @@ export function DashboardLayout({
             }}
             className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 text-white/70 hover:text-white hover:bg-white/5 py-2 text-sm transition"
           >
-            <LogOut className="size-4" /> Déconnexion
+            <LogOut className="size-4" /> {t("Déconnexion")}
           </button>
         </div>
       </aside>
@@ -438,7 +480,7 @@ export function DashboardLayout({
                 {items.map((it) => (
                   <Link key={it.to} to={it.to} onClick={() => setMobileNavOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${path === it.to ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/5 hover:text-white"}`}>
                     <it.icon className="size-4" />
-                    {it.label}
+                    {t(it.label)}
                   </Link>
                 ))}
               </nav>
@@ -450,7 +492,7 @@ export function DashboardLayout({
                 }}
                 className="mt-auto w-full inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 text-white/70 hover:text-white hover:bg-white/5 py-2 text-sm transition"
               >
-                <LogOut className="size-4" /> Déconnexion
+                <LogOut className="size-4" /> {t("Déconnexion")}
               </button>
             </motion.aside>
           </motion.div>
@@ -460,7 +502,7 @@ export function DashboardLayout({
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-30 bg-background/80 backdrop-blur border-b">
           <div className="flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-10 py-3 sm:py-4">
-            <button type="button" onClick={() => setMobileNavOpen(true)} className="md:hidden size-10 rounded-xl border bg-card grid place-items-center text-[color:var(--navy)]" aria-label="Ouvrir le menu">
+            <button type="button" onClick={() => setMobileNavOpen(true)} className="md:hidden size-10 rounded-xl border bg-card grid place-items-center text-[color:var(--navy)]" aria-label={t("Ouvrir le menu")}>
               <Menu className="size-5" />
             </button>
             <div className="min-w-0 flex-1">
@@ -471,15 +513,41 @@ export function DashboardLayout({
               <div className="relative hidden sm:block">
                 <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
-                  placeholder="Rechercher..."
+                  placeholder={t("Rechercher...")}
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
                   className="pl-9 pr-4 py-2 rounded-xl border bg-card text-sm w-64 outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
                 />
               </div>
+              {pwaPrompt ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!pwaPrompt) return;
+                    await pwaPrompt.prompt();
+                    const choice = await pwaPrompt.userChoice;
+                    if (choice.outcome === "accepted") setPwaPrompt(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl gradient-mint text-[color:var(--navy)] hover:brightness-110 transition text-xs font-semibold"
+                  title={t("Installer l'application")}
+                >
+                  <Download className="size-4" />
+                  <span className="hidden sm:inline">{t("Installer")}</span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={toggleLang}
+                className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl border bg-card text-[color:var(--navy)] hover:bg-muted transition text-sm font-semibold"
+                aria-label={t("Changer de langue")}
+                title={t("Changer de langue")}
+              >
+                <Languages className="size-4" />
+                {lang.toUpperCase()}
+              </button>
               <div className="relative">
-                <button type="button" onClick={() => setNotifOpen((v) => !v)} className="relative size-10 rounded-xl border bg-card grid place-items-center text-[color:var(--navy)] hover:bg-muted transition" aria-label="Notifications">
+                <button type="button" onClick={() => setNotifOpen((v) => !v)} className="relative size-10 rounded-xl border bg-card grid place-items-center text-[color:var(--navy)] hover:bg-muted transition" aria-label={t("Notifications")}>
                   <Bell className="size-4" />
                   {messages.length ? (
                     <span className="absolute -top-1 -right-1 min-w-5 h-5 rounded-full bg-[color:var(--mint)] px-1 text-[10px] font-bold text-[color:var(--navy)] grid place-items-center">
@@ -495,15 +563,15 @@ export function DashboardLayout({
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.15 }} className="absolute right-0 mt-2 w-[360px] max-w-[calc(100vw-2rem)] rounded-2xl border bg-card shadow-lg overflow-hidden">
                       <div className="px-4 py-3 border-b flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-semibold text-[color:var(--navy)]">Notifications</p>
-                          <p className="text-xs text-muted-foreground">{subtitle}</p>
+                          <p className="text-sm font-semibold text-[color:var(--navy)]">{t("Notifications")}</p>
+                          <p className="text-xs text-muted-foreground">{t(subtitle)}</p>
                         </div>
-                        <button type="button" onClick={() => setNotifOpen(false)} className="text-xs text-muted-foreground hover:text-foreground">Fermer</button>
+                        <button type="button" onClick={() => setNotifOpen(false)} className="text-xs text-muted-foreground hover:text-foreground">{t("Fermer")}</button>
                       </div>
                       <div className="max-h-[420px] overflow-auto">
-                        {notifLoading ? <div className="px-4 py-3 text-sm text-muted-foreground">Chargement...</div> : null}
+                        {notifLoading ? <div className="px-4 py-3 text-sm text-muted-foreground">{t("Chargement...")}</div> : null}
                         {notifError ? <div className="px-4 py-3 text-sm text-red-600">{notifError}</div> : null}
-                        {!notifLoading && !notifError && messages.length === 0 ? <div className="px-4 py-6 text-sm text-muted-foreground">Aucune notification.</div> : null}
+                        {!notifLoading && !notifError && messages.length === 0 ? <div className="px-4 py-6 text-sm text-muted-foreground">{t("Aucune notification.")}</div> : null}
                         {!notifLoading && !notifError && messages.length > 0 ? (
                           <ul className="divide-y">
                             {messages.map((m) => (
@@ -534,7 +602,7 @@ export function DashboardLayout({
         type="button"
         onClick={() => setChatbotOpen(true)}
         className="fixed bottom-5 right-5 z-40 size-14 rounded-2xl gradient-mint text-[color:var(--navy)] shadow-mint grid place-items-center hover:brightness-110 transition"
-        aria-label="Ouvrir le chatbot médical"
+        aria-label={t("Ouvrir le chatbot médical")}
       >
         <MessageCircle className="size-6" />
       </button>
@@ -562,15 +630,15 @@ export function DashboardLayout({
                     <Bot className="size-5" />
                   </span>
                   <div className="min-w-0">
-                    <p className="font-semibold text-[color:var(--navy)] truncate">Assistant santé</p>
-                    <p className="text-xs text-muted-foreground truncate">Connecté à Gemini via Supabase</p>
+                    <p className="font-semibold text-[color:var(--navy)] truncate">{t("Assistant santé")}</p>
+                    <p className="text-xs text-muted-foreground truncate">{t("Connecté à Gemini via Supabase")}</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setChatbotOpen(false)}
                   className="size-9 rounded-xl border grid place-items-center hover:bg-muted"
-                  aria-label="Fermer le chatbot médical"
+                  aria-label={t("Fermer le chatbot médical")}
                 >
                   <X className="size-4" />
                 </button>
@@ -591,7 +659,7 @@ export function DashboardLayout({
                 ))}
                 {chatbotLoading ? (
                   <div className="max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm bg-muted text-muted-foreground">
-                    Réponse en cours...
+                    {t("Réponse en cours...")}
                   </div>
                 ) : null}
               </div>
@@ -602,10 +670,10 @@ export function DashboardLayout({
                     <button
                       key={prompt}
                       type="button"
-                      onClick={() => void sendChatbotMessage(prompt)}
+                      onClick={() => void sendChatbotMessage(t(prompt))}
                       className="rounded-xl border px-3 py-1.5 text-xs hover:bg-muted"
                     >
-                      {prompt}
+                      {t(prompt)}
                     </button>
                   ))}
                 </div>
@@ -619,14 +687,14 @@ export function DashboardLayout({
                   <input
                     value={chatbotInput}
                     onChange={(e) => setChatbotInput(e.target.value)}
-                    placeholder="Posez une question médicale..."
+                    placeholder={t("Posez une question médicale...")}
                     className="min-w-0 flex-1 rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20"
                   />
                   <button
                     type="submit"
                     disabled={chatbotLoading || !chatbotInput.trim()}
                     className="size-10 rounded-xl gradient-mint text-[color:var(--navy)] grid place-items-center disabled:opacity-60"
-                    aria-label="Envoyer"
+                    aria-label={t("Envoyer")}
                   >
                     <Send className="size-4" />
                   </button>
@@ -648,6 +716,8 @@ function proactiveIntro(role: Role) {
       return "Je peux prioriser les soins, rappeler les médicaments à administrer et signaler les patients à risque.";
     case "pharmacien":
       return "Je peux détecter les stocks faibles, proposer les commandes et aider à préparer les délivrances.";
+    case "admin":
+      return "Je peux suivre les ruptures, suggérer les commandes pharmacie, surveiller les ordonnances et les mouvements de stock.";
     case "comptable":
       return "Je peux signaler les retards de paiement et générer un résumé financier rapide.";
     case "patient":
@@ -663,7 +733,7 @@ function proactiveIntro(role: Role) {
 
 function quickPromptsForRole(role: Role) {
   const prompts: Record<Role, string[]> = {
-    admin: ["Résumé des alertes", "Aide création compte"],
+    admin: ["Alertes pharmacie", "Commande recommandée"],
     medecin: ["RDV importants", "Symptômes à analyser"],
     infirmier: ["Soins prioritaires", "Patients à risque"],
     secretaire: ["Prioriser les RDV", "Relances patients"],
@@ -703,3 +773,4 @@ export function StatCard({
 }
 
 export const cardIcons = { Users, Calendar, Activity, Pill, ClipboardList, FileText };
+

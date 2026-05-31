@@ -14,11 +14,10 @@ function json(status: number, payload: unknown) {
   });
 }
 
-// XAF → EUR (taux fixe CFA : 1 EUR = 655.957 XAF)
-// Stripe ne supporte pas XAF — on charge en EUR centimes
-function xafToEurCents(xaf: number): number {
-  const eur = xaf / 655.957;
-  return Math.max(50, Math.round(eur * 100)); // minimum 0.50 EUR
+// Conversion interne FCFA -> centimes Stripe.
+function fcfaToStripeCents(fcfa: number): number {
+  const eur = fcfa / 655.957;
+  return Math.max(50, Math.round(eur * 100));
 }
 
 Deno.serve(async (req: Request) => {
@@ -45,17 +44,42 @@ Deno.serve(async (req: Request) => {
     if (userErr || !user?.id) return json(401, { error: "Non authentifié." });
 
     const body = await req.json();
-    const { card_number, exp_month, exp_year, cvc, holder_name, amount_xaf, invoice_id } = body;
+    const { card_number, exp_month, exp_year, cvc, holder_name, invoice_id } = body;
+    let amountFcfa = 0;
 
     if (!card_number || !exp_month || !exp_year || !cvc) {
       return json(400, { error: "Données de carte incomplètes." });
     }
-    if (!amount_xaf || amount_xaf <= 0) {
+
+    // Si une facture est fournie, récupérer le montant côté serveur (source de vérité)
+    if (invoice_id && svcKey) {
+      try {
+        const adminClient = createClient(url, svcKey, {
+          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        });
+        const { data: inv, error: invErr } = await (adminClient as any)
+          .schema("app")
+          .from("invoices")
+          .select("total")
+          .eq("id", invoice_id)
+          .maybeSingle();
+        if (invErr) return json(400, { error: invErr.message });
+        amountFcfa = Number(inv?.total ?? 0);
+      } catch (e) {
+        return json(400, { error: (e as any)?.message ?? "Facture introuvable." });
+      }
+    } else {
+      // Fallback: utiliser le montant fourni par le client (moins sûr)
+      const amt = Number(body?.amount_fcfa ?? 0);
+      amountFcfa = isFinite(amt) ? amt : 0;
+    }
+
+    if (!amountFcfa || amountFcfa <= 0) {
       return json(400, { error: "Montant invalide." });
     }
 
     const cleanCard = String(card_number).replace(/\s/g, "");
-    const amountCents = xafToEurCents(Number(amount_xaf));
+    const amountCents = fcfaToStripeCents(amountFcfa);
 
     // Étape 1 : créer le PaymentMethod avec les données carte
     const pmParams = new URLSearchParams({
@@ -123,7 +147,8 @@ Deno.serve(async (req: Request) => {
         .insert({
           invoice_id,
           method: "card",
-          amount: Number(amount_xaf),
+          amount: amountFcfa,
+          currency: "FCFA",
           transaction_ref: pi.id,
           received_by: user.id,
         });
@@ -133,7 +158,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       payment_intent_id: pi.id,
       status: pi.status,
-      amount_eur: (amountCents / 100).toFixed(2),
+      stripe_amount: (amountCents / 100).toFixed(2),
     });
   } catch (e) {
     return json(500, { error: (e as any)?.message ?? "Erreur serveur." });

@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
+import { enDict } from "./i18n.en";
+
 export type Lang = "fr" | "en";
 
 const safeStorage = createJSONStorage(() =>
@@ -25,6 +27,29 @@ export const useI18n = create<I18nState>()(
     { name: "2kc-lang", storage: safeStorage },
   ),
 );
+
+/**
+ * Traduction par clé = texte source français.
+ * - En français : renvoie la chaîne telle quelle.
+ * - En anglais : cherche dans `enDict`, sinon repli sur le français (pas de casse).
+ *
+ * Interpolation simple : t("Bonjour {name}", { name }).
+ */
+export function translate(lang: Lang, fr: string, vars?: Record<string, string | number>): string {
+  let out = lang === "en" ? enDict[fr] ?? fr : fr;
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      out = out.replace(new RegExp(`\\{${k}\\}`, "g"), String(v));
+    }
+  }
+  return out;
+}
+
+/** Hook React : retourne la fonction `t` liée à la langue courante. */
+export function useT() {
+  const lang = useI18n((s) => s.lang);
+  return (fr: string, vars?: Record<string, string | number>) => translate(lang, fr, vars);
+}
 
 export const homeText = {
   fr: {

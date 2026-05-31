@@ -7,6 +7,7 @@ import { getSupabaseAsync } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { directorKpiInsights } from "@/lib/ai";
+import { formatFcfa } from "@/lib/currency";
 
 export const Route = createFileRoute("/directeur")({ component: DirecteurHome });
 
@@ -35,7 +36,7 @@ function startOfNextMonthIso() {
 }
 
 function fmt(x: number) {
-  return new Intl.NumberFormat("fr-FR").format(x) + " XAF";
+  return formatFcfa(x);
 }
 
 function DirecteurHome() {

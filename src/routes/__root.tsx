@@ -137,7 +137,7 @@ function RootComponent() {
   const lang = useI18n((s) => s.lang);
   const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const homeVoiceKeyRef = useRef<string | null>(null);
+  const welcomeSpokenRef = useRef(false);
 
   // Enregistrement du service worker (PWA installable)
   useEffect(() => {
@@ -151,35 +151,40 @@ function RootComponent() {
     else window.addEventListener("load", register, { once: true });
   }, []);
 
+  // Message vocal de bienvenue : une seule fois, à la première entrée dans
+  // l'application (page d'accueil). Ne se redéclenche pas en changeant de page.
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    if (pathname !== "/") {
-      window.speechSynthesis.cancel();
-      homeVoiceKeyRef.current = null;
-      return;
-    }
-    const voiceKey = pathname;
-    if (homeVoiceKeyRef.current === voiceKey) return;
-    homeVoiceKeyRef.current = voiceKey;
-
-    const text = homeText[lang].welcome;
-    const speak = () => {
-      try {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
-        utterance.rate = 0.95;
-        window.speechSynthesis.speak(utterance);
-      } catch {
-        // Some browsers block autoplayed speech until the first user interaction.
+    if (welcomeSpokenRef.current) return;
+    // Uniquement au point d'entrée de l'app (page d'accueil)
+    if (pathname !== "/") return;
+    // Déjà prononcé pendant cette session de navigation ?
+    try {
+      if (sessionStorage.getItem("2kc-welcome-spoken") === "1") {
+        welcomeSpokenRef.current = true;
+        return;
       }
-    };
+    } catch {
+      // sessionStorage indisponible — on continue avec le garde en mémoire
+    }
 
-    speak();
-    return () => {
+    welcomeSpokenRef.current = true;
+    try {
+      sessionStorage.setItem("2kc-welcome-spoken", "1");
+    } catch {
+      // ignore
+    }
+
+    try {
       window.speechSynthesis.cancel();
-    };
-  }, [lang, pathname]);
+      const utterance = new SpeechSynthesisUtterance(homeText[lang].welcome);
+      utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
+      utterance.rate = 0.95;
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // Certains navigateurs bloquent la lecture auto avant une interaction.
+    }
+  }, [pathname, lang]);
 
   useEffect(() => {
     const unsub = router.subscribe("onResolved", () => {

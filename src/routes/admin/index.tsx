@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { type Medicine } from "@/lib/store";
+import { formatFcfa } from "@/lib/currency";
 
 export const Route = createFileRoute("/admin/")({
   component: AdminHome,
@@ -104,7 +105,7 @@ function AdminHome() {
           <h3 className="text-lg font-bold">Pharmacie</h3>
           <p className="text-white/70 text-sm">Valeur totale du stock</p>
           <p className="mt-4 font-display text-4xl font-bold text-gradient-mint">
-            {totalValue.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €
+            {formatFcfa(totalValue)}
           </p>
           {lowStock.length > 0 && (
             <div className="mt-5 rounded-2xl glass-dark p-4">

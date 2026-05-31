@@ -293,7 +293,7 @@ function Login() {
 
         <div className="relative">
           <h1 className="font-display text-5xl font-bold leading-tight xl:text-6xl">
-            Votre santé en toute <span className="text-gradient-mint">simplicité</span>.
+            Votre santé, <span className="text-gradient-mint">Notre priorité</span>.
           </h1>
           <p className="mt-5 max-w-md text-lg leading-relaxed text-white/70">
             Accédez à vos ordonnances, prenez vos rendez-vous en ligne, ou pilotez le centre en quelques clics.
@@ -353,7 +353,12 @@ function Login() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className={labelClass}>Mot de passe</label>
+                  <div className="flex items-center justify-between gap-3">
+                    <label className={labelClass}>Mot de passe</label>
+                    <Link to="/forgot-password" className="text-xs font-semibold text-[color:var(--navy)]/70 hover:text-[color:var(--navy)]">
+                      Mot de passe oublié ?
+                    </Link>
+                  </div>
                   <div className="relative">
                     <Lock className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <input

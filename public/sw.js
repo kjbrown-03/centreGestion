@@ -1,5 +1,5 @@
 // Service Worker — Centre 2KC PWA
-const CACHE_NAME = "2kc-cache-v1";
+const CACHE_NAME = "2kc-cache-v2";
 const PRECACHE_URLS = [
   "/",
   "/favicon.svg",
@@ -31,6 +31,12 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
+
+  // En developpement local, ne rien servir depuis le cache.
+  if (["localhost", "127.0.0.1", "::1"].includes(url.hostname)) {
+    event.respondWith(fetch(req));
+    return;
+  }
 
   // Never cache Supabase / API calls — always go to network
   if (url.hostname.includes("supabase") || url.pathname.startsWith("/api")) {

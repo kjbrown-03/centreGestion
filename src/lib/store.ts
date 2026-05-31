@@ -156,18 +156,18 @@ export const useAuditLog = create<AuditLogState>()(
 );
 
 const seedMedicines: Medicine[] = [
-  { id: "m1", name: "Paracétamol 500mg", category: "Antalgique", stock: 240, threshold: 50, price: 1.2, expiry: "2026-08-12", image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=400&q=80" },
-  { id: "m2", name: "Amoxicilline 1g", category: "Antibiotique", stock: 38, threshold: 40, price: 4.5, expiry: "2026-03-04", image: "https://images.unsplash.com/photo-1607619056574-7b8d3ee536b2?w=400&q=80" },
-  { id: "m3", name: "Ibuprofène 400mg", category: "Anti-inflammatoire", stock: 180, threshold: 60, price: 2.1, expiry: "2027-01-22", image: "https://images.unsplash.com/photo-1550572017-edd951b55104?w=400&q=80" },
-  { id: "m4", name: "Doliprane sirop", category: "Antalgique", stock: 64, threshold: 30, price: 3.8, expiry: "2026-05-30", image: "https://images.unsplash.com/photo-1471864190281-a93a3070b6de?w=400&q=80" },
-  { id: "m5", name: "Ventoline aérosol", category: "Bronchodilatateur", stock: 22, threshold: 25, price: 6.9, expiry: "2026-09-18", image: "https://images.unsplash.com/photo-1631549916768-4119b2e5f926?w=400&q=80" },
-  { id: "m6", name: "Insuline rapide", category: "Endocrinologie", stock: 14, threshold: 20, price: 18.4, expiry: "2026-02-10", image: "https://images.unsplash.com/photo-1576602976047-174e57a47881?w=400&q=80" },
-  { id: "m7", name: "Aspirine 100mg", category: "Cardiologie", stock: 320, threshold: 80, price: 1.6, expiry: "2027-06-01", image: "https://images.unsplash.com/photo-1587854692152-cbe660dbde88?w=400&q=80" },
-  { id: "m8", name: "Oméprazole 20mg", category: "Gastro", stock: 110, threshold: 40, price: 3.2, expiry: "2026-11-15", image: "https://images.unsplash.com/photo-1626716493137-b67fe9501e76?w=400&q=80" },
-  { id: "m9", name: "Loratadine 10mg", category: "Antihistaminique", stock: 78, threshold: 35, price: 2.4, expiry: "2027-02-28", image: "https://images.unsplash.com/photo-1585435557343-3b092031a831?w=400&q=80" },
-  { id: "m10", name: "Sérum physiologique", category: "Soins", stock: 540, threshold: 100, price: 0.9, expiry: "2028-01-01", image: "https://images.unsplash.com/photo-1583912267550-d6c2ac3196c0?w=400&q=80" },
-  { id: "m11", name: "Bétadine 10%", category: "Antiseptique", stock: 96, threshold: 30, price: 5.5, expiry: "2027-04-20", image: "https://images.unsplash.com/photo-1538935732373-f7a495fea3f6?w=400&q=80" },
-  { id: "m12", name: "Vitamine D3", category: "Vitamines", stock: 210, threshold: 50, price: 7.8, expiry: "2027-09-09", image: "https://images.unsplash.com/photo-1559757175-08c2c4b8d3a6?w=400&q=80" },
+  { id: "m1", name: "Paracétamol 500mg", category: "Antalgique", stock: 240, threshold: 50, price: 500, expiry: "2026-08-12", image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=400&q=80" },
+  { id: "m2", name: "Amoxicilline 1g", category: "Antibiotique", stock: 38, threshold: 40, price: 2500, expiry: "2026-03-04", image: "https://images.unsplash.com/photo-1607619056574-7b8d3ee536b2?w=400&q=80" },
+  { id: "m3", name: "Ibuprofène 400mg", category: "Anti-inflammatoire", stock: 180, threshold: 60, price: 750, expiry: "2027-01-22", image: "https://images.unsplash.com/photo-1550572017-edd951b55104?w=400&q=80" },
+  { id: "m4", name: "Doliprane sirop", category: "Antalgique", stock: 64, threshold: 30, price: 1800, expiry: "2026-05-30", image: "https://images.unsplash.com/photo-1471864190281-a93a3070b6de?w=400&q=80" },
+  { id: "m5", name: "Ventoline aérosol", category: "Bronchodilatateur", stock: 22, threshold: 25, price: 3500, expiry: "2026-09-18", image: "https://images.unsplash.com/photo-1631549916768-4119b2e5f926?w=400&q=80" },
+  { id: "m6", name: "Insuline rapide", category: "Endocrinologie", stock: 14, threshold: 20, price: 9000, expiry: "2026-02-10", image: "https://images.unsplash.com/photo-1576602976047-174e57a47881?w=400&q=80" },
+  { id: "m7", name: "Aspirine 100mg", category: "Cardiologie", stock: 320, threshold: 80, price: 400, expiry: "2027-06-01", image: "https://images.unsplash.com/photo-1587854692152-cbe660dbde88?w=400&q=80" },
+  { id: "m8", name: "Oméprazole 20mg", category: "Gastro", stock: 110, threshold: 40, price: 1600, expiry: "2026-11-15", image: "https://images.unsplash.com/photo-1626716493137-b67fe9501e76?w=400&q=80" },
+  { id: "m9", name: "Loratadine 10mg", category: "Antihistaminique", stock: 78, threshold: 35, price: 1200, expiry: "2027-02-28", image: "https://images.unsplash.com/photo-1585435557343-3b092031a831?w=400&q=80" },
+  { id: "m10", name: "Sérum physiologique", category: "Soins", stock: 540, threshold: 100, price: 300, expiry: "2028-01-01", image: "https://images.unsplash.com/photo-1583912267550-d6c2ac3196c0?w=400&q=80" },
+  { id: "m11", name: "Bétadine 10%", category: "Antiseptique", stock: 96, threshold: 30, price: 1500, expiry: "2027-04-20", image: "https://images.unsplash.com/photo-1538935732373-f7a495fea3f6?w=400&q=80" },
+  { id: "m12", name: "Vitamine D3", category: "Vitamines", stock: 210, threshold: 50, price: 2000, expiry: "2027-09-09", image: "https://images.unsplash.com/photo-1559757175-08c2c4b8d3a6?w=400&q=80" },
 ];
 
 type PharmacyState = {

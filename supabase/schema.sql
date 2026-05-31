@@ -285,7 +285,7 @@ create table if not exists app.invoices (
   consultation_id uuid null references app.consultations(id) on delete set null,
   invoice_no text not null unique,
   status app.invoice_status not null default 'emise',
-  currency text not null default 'XAF',
+  currency text not null default 'FCFA',
   subtotal numeric(12,2) not null default 0,
   total numeric(12,2) not null default 0,
   created_by uuid null references app.profiles(user_id),
@@ -340,7 +340,7 @@ create table if not exists app.payments (
   invoice_id uuid not null references app.invoices(id) on delete cascade,
   method app.payment_method not null,
   amount numeric(12,2) not null,
-  currency text not null default 'XAF',
+  currency text not null default 'FCFA',
   transaction_ref text null,
   received_at timestamptz not null default now(),
   received_by uuid null references app.profiles(user_id)

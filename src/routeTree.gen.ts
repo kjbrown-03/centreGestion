@@ -23,6 +23,7 @@ import { Route as CentreRouteImport } from './routes/centre'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminUtilisateursRouteImport } from './routes/admin/utilisateurs'
+import { Route as AdminSuiviPharmacieRouteImport } from './routes/admin/suivi-pharmacie'
 import { Route as AdminRendezVousRouteImport } from './routes/admin/rendez-vous'
 import { Route as AdminPharmacieRouteImport } from './routes/admin/pharmacie'
 import { Route as AdminPatientsRouteImport } from './routes/admin/patients'
@@ -97,6 +98,11 @@ const AdminUtilisateursRoute = AdminUtilisateursRouteImport.update({
   path: '/admin/utilisateurs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminSuiviPharmacieRoute = AdminSuiviPharmacieRouteImport.update({
+  id: '/admin/suivi-pharmacie',
+  path: '/admin/suivi-pharmacie',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRendezVousRoute = AdminRendezVousRouteImport.update({
   id: '/admin/rendez-vous',
   path: '/admin/rendez-vous',
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/admin/patients': typeof AdminPatientsRoute
   '/admin/pharmacie': typeof AdminPharmacieRoute
   '/admin/rendez-vous': typeof AdminRendezVousRoute
+  '/admin/suivi-pharmacie': typeof AdminSuiviPharmacieRoute
   '/admin/utilisateurs': typeof AdminUtilisateursRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -148,6 +155,7 @@ export interface FileRoutesByTo {
   '/admin/patients': typeof AdminPatientsRoute
   '/admin/pharmacie': typeof AdminPharmacieRoute
   '/admin/rendez-vous': typeof AdminRendezVousRoute
+  '/admin/suivi-pharmacie': typeof AdminSuiviPharmacieRoute
   '/admin/utilisateurs': typeof AdminUtilisateursRoute
   '/admin': typeof AdminIndexRoute
 }
@@ -168,6 +176,7 @@ export interface FileRoutesById {
   '/admin/patients': typeof AdminPatientsRoute
   '/admin/pharmacie': typeof AdminPharmacieRoute
   '/admin/rendez-vous': typeof AdminRendezVousRoute
+  '/admin/suivi-pharmacie': typeof AdminSuiviPharmacieRoute
   '/admin/utilisateurs': typeof AdminUtilisateursRoute
   '/admin/': typeof AdminIndexRoute
 }
@@ -189,6 +198,7 @@ export interface FileRouteTypes {
     | '/admin/patients'
     | '/admin/pharmacie'
     | '/admin/rendez-vous'
+    | '/admin/suivi-pharmacie'
     | '/admin/utilisateurs'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
@@ -208,6 +218,7 @@ export interface FileRouteTypes {
     | '/admin/patients'
     | '/admin/pharmacie'
     | '/admin/rendez-vous'
+    | '/admin/suivi-pharmacie'
     | '/admin/utilisateurs'
     | '/admin'
   id:
@@ -227,6 +238,7 @@ export interface FileRouteTypes {
     | '/admin/patients'
     | '/admin/pharmacie'
     | '/admin/rendez-vous'
+    | '/admin/suivi-pharmacie'
     | '/admin/utilisateurs'
     | '/admin/'
   fileRoutesById: FileRoutesById
@@ -247,6 +259,7 @@ export interface RootRouteChildren {
   AdminPatientsRoute: typeof AdminPatientsRoute
   AdminPharmacieRoute: typeof AdminPharmacieRoute
   AdminRendezVousRoute: typeof AdminRendezVousRoute
+  AdminSuiviPharmacieRoute: typeof AdminSuiviPharmacieRoute
   AdminUtilisateursRoute: typeof AdminUtilisateursRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
@@ -351,6 +364,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUtilisateursRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/suivi-pharmacie': {
+      id: '/admin/suivi-pharmacie'
+      path: '/admin/suivi-pharmacie'
+      fullPath: '/admin/suivi-pharmacie'
+      preLoaderRoute: typeof AdminSuiviPharmacieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/rendez-vous': {
       id: '/admin/rendez-vous'
       path: '/admin/rendez-vous'
@@ -391,6 +411,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminPatientsRoute: AdminPatientsRoute,
   AdminPharmacieRoute: AdminPharmacieRoute,
   AdminRendezVousRoute: AdminRendezVousRoute,
+  AdminSuiviPharmacieRoute: AdminSuiviPharmacieRoute,
   AdminUtilisateursRoute: AdminUtilisateursRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
