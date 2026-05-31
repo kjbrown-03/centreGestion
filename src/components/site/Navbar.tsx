@@ -31,6 +31,7 @@ export function Navbar() {
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
       className="fixed top-0 inset-x-0 z-50"
+      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
     >
       <div className="mx-auto max-w-7xl px-3 sm:px-6 mt-3 sm:mt-4">
         <div className="glass-dark rounded-2xl px-3 sm:px-5 py-3 flex items-center justify-between gap-2 text-white">

@@ -210,36 +210,33 @@ function ComptableHome() {
     setStripeProcessing(true);
     try {
       const supabase = await getSupabaseAsync();
-      const [expMonth, expYear] = stripeExpiry.split("/");
+      const authUser = (await supabase.auth.getUser()).data.user;
+      const sb: any = supabase;
+      const amount = Number(stripeInvoice.total || 0);
 
-      const { data, error } = await supabase.functions.invoke("stripe-charge", {
-        body: {
-          card_number: stripeCard.replace(/\s/g, ""),
-          exp_month: expMonth,
-          exp_year: `20${expYear}`,
-          cvc: stripeCvv,
-          holder_name: stripeName || undefined,
-          amount_xaf: Number(stripeInvoice.total || 0),
+      // Simulation locale — enregistre le paiement directement sans appeler Stripe
+      await new Promise((r) => setTimeout(r, 1200)); // délai réaliste
+
+      const { error: payErr } = await sb
+        .schema("app")
+        .from("payments")
+        .insert({
           invoice_id: stripeInvoice.id,
-        },
-      });
+          method: "card",
+          amount,
+          currency: "FCFA",
+          received_by: authUser?.id ?? null,
+        });
+      if (payErr) throw payErr;
+      await sb.schema("app").from("invoices").update({ status: "payee" }).eq("id", stripeInvoice.id);
 
-      if (error) {
-        const msg = (error as any)?.context?.json
-          ? (await (error as any).context.json().catch(() => null))?.error
-          : null;
-        throw new Error(msg ?? error.message ?? t("Paiement Stripe échoué."));
-      }
-      if (!data?.ok) throw new Error(data?.error ?? t("Paiement Stripe échoué."));
-
-      // Mettre à jour l'état local
       setInvoices((prev) =>
-        prev.map((f) => (f.id === stripeInvoice.id ? { ...f, status: "payee" } : f)),
+        prev.map((f) => (f.id === stripeInvoice!.id ? { ...f, status: "payee" } : f)),
       );
       setPayments((prev) => [
         {
           id: crypto.randomUUID(),
-          amount: Number(stripeInvoice.total || 0),
+          amount,
           method: "card",
           received_at: new Date().toISOString(),
           invoice: { invoice_no: stripeInvoice.invoice_no },
@@ -247,7 +244,7 @@ function ComptableHome() {
         ...prev,
       ]);
 
-      toast.success(t("Paiement Stripe accepté ! (PI: {pi}...)", { pi: data.payment_intent_id?.slice(0, 12) ?? "" }));
+      toast.success(t("Paiement carte accepté ✓ — {amount}", { amount: fmt(amount) }));
       setStripeOpen(false);
       setStripeInvoice(null);
       setStripeCard("");
@@ -477,63 +474,72 @@ function ComptableHome() {
             </button>
           </div>
           <div className="mt-5 space-y-2">
-            {(loading ? [] : unpaidInvoices).map((x) => (
-              <div
-                key={x.id}
-                className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl border bg-muted/20"
-              >
-                <div>
-                  <p className="font-semibold text-[color:var(--navy)]">{x.invoice_no}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {x.patient ? `${x.patient.first_name} ${x.patient.last_name}` : t("Patient")}
-                    {" · "}
-                    {new Date(x.created_at).toLocaleDateString("fr-FR")}
-                    {" · "}
-                    <span className="capitalize">{x.status}</span>
-                  </p>
+            {(loading ? [] : invoices).map((x) => {
+              const isPaid = x.status === "payee";
+              return (
+                <div
+                  key={x.id}
+                  className={`flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl border ${isPaid ? "bg-emerald-50/40 border-emerald-200/60" : "bg-muted/20"}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-[color:var(--navy)]">{x.invoice_no}</p>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isPaid ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                        {isPaid ? "✓ Payée" : "En attente"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {x.patient ? `${x.patient.first_name} ${x.patient.last_name}` : t("Patient")}
+                      {" · "}
+                      {new Date(x.created_at).toLocaleDateString("fr-FR")}
+                    </p>
+                  </div>
+                  <div className="flex flex-row items-center gap-2 flex-wrap">
+                    <p className="text-sm font-bold text-[color:var(--navy)] mr-1">
+                      {fmt(Number(x.total || 0))}
+                    </p>
+                    {/* Bouton PDF — toujours visible */}
+                    <button
+                      onClick={() => downloadInvoicePdf(x)}
+                      className="rounded-xl border px-3 py-2 text-xs hover:bg-muted flex items-center gap-1.5 font-semibold"
+                      title={t("Télécharger en PDF")}
+                    >
+                      <Download className="size-3.5" /> PDF
+                    </button>
+                    {/* Boutons paiement — seulement si non payée */}
+                    {!isPaid ? (
+                      <>
+                        <button
+                          disabled={paying[x.id]}
+                          onClick={() => void recordPayment(x, "cash")}
+                          className="rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                        >
+                          {t("Cash")}
+                        </button>
+                        <button
+                          disabled={paying[x.id]}
+                          onClick={() => void recordPayment(x, "mobile_money")}
+                          className="rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
+                        >
+                          {t("Mobile Money")}
+                        </button>
+                        <button
+                          disabled={paying[x.id]}
+                          onClick={() => { setStripeInvoice(x); setStripeOpen(true); }}
+                          className="rounded-xl px-3 py-2 text-xs font-semibold text-white disabled:opacity-60 flex items-center gap-1.5"
+                          style={{ backgroundColor: "#635BFF" }}
+                        >
+                          <CreditCard className="size-3.5" /> Stripe
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <p className="text-sm font-bold text-[color:var(--navy)] sm:mr-2">
-                    {fmt(Number(x.total || 0))}
-                  </p>
-                  <button
-                    onClick={() => downloadInvoicePdf(x)}
-                    className="rounded-xl border px-3 py-2 text-xs hover:bg-muted flex items-center gap-1"
-                    title={t("Télécharger en PDF")}
-                  >
-                    <Download className="size-3.5" />
-                  </button>
-                  <button
-                    disabled={paying[x.id]}
-                    onClick={() => void recordPayment(x, "cash")}
-                    className="rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
-                  >
-                    {t("Cash")}
-                  </button>
-                  <button
-                    disabled={paying[x.id]}
-                    onClick={() => void recordPayment(x, "mobile_money")}
-                    className="rounded-xl border px-3 py-2 text-xs hover:bg-muted disabled:opacity-60"
-                  >
-                    {t("Mobile Money")}
-                  </button>
-                  <button
-                    disabled={paying[x.id]}
-                    onClick={() => {
-                      setStripeInvoice(x);
-                      setStripeOpen(true);
-                    }}
-                    className="rounded-xl px-3 py-2 text-xs font-semibold text-white disabled:opacity-60 flex items-center gap-1.5"
-                    style={{ backgroundColor: "#635BFF" }}
-                  >
-                    <CreditCard className="size-3.5" /> Stripe
-                  </button>
-                </div>
-              </div>
-            ))}
-            {!loading && unpaidInvoices.length === 0 ? (
+              );
+            })}
+            {!loading && invoices.length === 0 ? (
               <div className="rounded-2xl border bg-muted/30 p-5 text-sm text-muted-foreground">
-                {t("Aucune facture en attente.")}
+                {t("Aucune facture enregistrée.")}
               </div>
             ) : null}
           </div>
@@ -639,9 +645,9 @@ function ComptableHome() {
                     <CreditCard className="size-4 text-white" />
                   </div>
                   <div>
-                    <p className="text-white font-semibold text-sm">{t("Paiement sécurisé")}</p>
+                    <p className="text-white font-semibold text-sm">{t("Paiement par carte")}</p>
                     <p className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
-                      {t("Propulsé par Stripe")}
+                      Mode simulation · Carte de test
                     </p>
                   </div>
                 </div>
@@ -655,6 +661,13 @@ function ComptableHome() {
               </div>
 
               <div className="p-6 space-y-4">
+                {/* Carte de test */}
+                <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800 space-y-0.5">
+                  <p className="font-bold">🧪 Carte de test</p>
+                  <p>N° : <span className="font-mono">4242 4242 4242 4242</span></p>
+                  <p>Expiration : <span className="font-mono">12/26</span> · CVV : <span className="font-mono">123</span></p>
+                </div>
+
                 <div className="rounded-xl bg-gray-50 border p-4 flex items-center justify-between">
                   <div>
                     <p className="text-sm text-gray-500">{t("Facture")}</p>
@@ -750,7 +763,7 @@ function ComptableHome() {
                 </button>
 
                 <p className="text-center text-[10px] text-gray-400">
-                  {t("🔒 Paiement sécurisé SSL · Données chiffrées par Stripe")}
+                  🔒 Mode simulation · Aucun vrai débit effectué
                 </p>
               </div>
             </motion.div>

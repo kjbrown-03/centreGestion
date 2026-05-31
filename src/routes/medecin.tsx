@@ -99,6 +99,8 @@ function MedecinHome() {
   const [messages, setMessages] = useState<any[]>([]);
   const [msgBody, setMsgBody] = useState("");
   const [msgSending, setMsgSending] = useState(false);
+  const [allMessages, setAllMessages] = useState<any[]>([]); // messages de tous les patients du médecin
+  const [msgLoading, setMsgLoading] = useState(false);
 
   const [creatingConsultation, setCreatingConsultation] = useState(false);
   const [chiefComplaint, setChiefComplaint] = useState("");
@@ -277,6 +279,30 @@ function MedecinHome() {
     return () => {
       alive = false;
     };
+  }, []);
+
+  // Charger tous les messages reçus des patients du médecin
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setMsgLoading(true);
+      try {
+        const supabase = await getSupabaseAsync();
+        const authUser = (await supabase.auth.getUser()).data.user;
+        if (!authUser?.id) return;
+        const { data, error } = await (supabase as any)
+          .schema("app")
+          .from("messages")
+          .select("id, body, sender, created_at, patient_id, practitioner_id, patient:patient_id(first_name, last_name)")
+          .eq("practitioner_id", authUser.id)
+          .order("created_at", { ascending: false })
+          .limit(20);
+        if (!error && alive) setAllMessages(data ?? []);
+      } catch { /* ignore */ } finally {
+        if (alive) setMsgLoading(false);
+      }
+    })();
+    return () => { alive = false; };
   }, []);
 
   async function openPatientFile(appt: ApptRow) {
@@ -595,11 +621,11 @@ function MedecinHome() {
         />
       </div>
 
-      <div className="mt-8 grid lg:grid-cols-3 gap-6">
+      <div className="mt-8 grid lg:grid-cols-2 gap-6">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="lg:col-span-2 rounded-3xl border bg-card p-7"
+          className="rounded-3xl border bg-card p-7"
         >
           <h3 className="text-lg font-bold text-[color:var(--navy)]">{t("Agenda du jour")}</h3>
           <div className="mt-5 space-y-2">
@@ -647,7 +673,50 @@ function MedecinHome() {
           </div>
         </motion.div>
 
-        {/* Notes rapides section retirée */}
+        {/* Panel messagerie patients — visible directement sur la page principale */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="rounded-3xl border bg-card p-7"
+        >
+          <h3 className="text-lg font-bold text-[color:var(--navy)] flex items-center gap-2">
+            💬 {t("Messagerie")}
+            {allMessages.filter((m: any) => m.sender === "patient").length > 0 && (
+              <span className="size-5 rounded-full gradient-mint text-[color:var(--navy)] text-[10px] font-bold grid place-items-center">
+                {allMessages.filter((m: any) => m.sender === "patient").length}
+              </span>
+            )}
+          </h3>
+          <p className="text-xs text-muted-foreground mt-1">{t("Messages reçus de vos patients")}</p>
+          <div className="mt-5 space-y-3 max-h-[340px] overflow-auto pr-1">
+            {msgLoading ? (
+              <div className="text-sm text-muted-foreground">{t("Chargement...")}</div>
+            ) : allMessages.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-4 text-center">{t("Aucun message.")}</div>
+            ) : (
+              allMessages.map((m: any) => (
+                <div
+                  key={m.id}
+                  className={`px-4 py-3 rounded-2xl border ${m.sender === "patient" ? "bg-[color:var(--mint)]/10 border-[color:var(--mint)]/20" : "bg-muted/30"}`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-xs font-bold text-[color:var(--navy)]">
+                      {m.patient ? `${m.patient.first_name} ${m.patient.last_name}` : t("Patient")}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(m.created_at).toLocaleString([], { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                  <p className="text-sm text-[color:var(--navy)]/80 whitespace-pre-wrap">{m.body}</p>
+                </div>
+              ))
+            )}
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground text-center">
+            {t("Cliquez sur un RDV pour répondre à un patient")} →
+          </p>
+        </motion.div>
       </div>
 
       {selectedAppt?.patient ? (
@@ -717,43 +786,6 @@ function MedecinHome() {
                 </div>
 
                 <div className="rounded-3xl border bg-card p-6">
-                  <h4 className="font-bold text-[color:var(--navy)]">{t("Messagerie")}</h4>
-                  <div className="mt-4 space-y-3 max-h-[240px] overflow-auto pr-1">
-                    {patientLoading ? (
-                      <div className="text-sm text-muted-foreground">{t("Chargement...")}</div>
-                    ) : (messages ?? []).length === 0 ? (
-                      <div className="text-sm text-muted-foreground">{t("Aucun message.")}</div>
-                    ) : (
-                      messages.map((m: any) => (
-                        <div key={m.id} className={`px-4 py-3 rounded-2xl border ${m.sender === "patient" ? "bg-[color:var(--mint)]/10 ml-8" : "bg-muted/40 mr-8"}`}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-semibold text-muted-foreground">{m.sender === "patient" ? t("Patient") : t("Praticien")}</span>
-                            <span className="text-[10px] text-muted-foreground">{new Date(m.created_at).toLocaleString()}</span>
-                          </div>
-                          <div className="mt-1 text-sm text-[color:var(--navy)] whitespace-pre-wrap">{m.body}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    <input
-                      value={msgBody}
-                      onChange={(e) => setMsgBody(e.target.value)}
-                      placeholder={t("Votre réponse...")}
-                      className="flex-1 rounded-xl border bg-background px-3 py-2 text-sm outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void sendReply()}
-                      disabled={msgSending || !msgBody.trim()}
-                      className="rounded-xl border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
-                    >
-                      {t("Envoyer")}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border bg-card p-6">
                   <h4 className="font-bold text-[color:var(--navy)]">{t("Examens")}</h4>
                   <div className="mt-4 space-y-3">
                     {patientLoading ? (
@@ -791,6 +823,52 @@ function MedecinHome() {
               </div>
 
               <div className="space-y-6">
+                {/* Messagerie — colonne droite, visible en premier */}
+                <div className="rounded-3xl border bg-card p-6">
+                  <h4 className="font-bold text-[color:var(--navy)] flex items-center gap-2">
+                    💬 {t("Messagerie")}
+                    {messages.length > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[color:var(--mint)] text-[color:var(--navy)]">
+                        {messages.filter((m: any) => m.sender === "patient").length}
+                      </span>
+                    )}
+                  </h4>
+                  <div className="mt-4 space-y-3 max-h-[200px] overflow-auto pr-1">
+                    {patientLoading ? (
+                      <div className="text-sm text-muted-foreground">{t("Chargement...")}</div>
+                    ) : (messages ?? []).length === 0 ? (
+                      <div className="text-sm text-muted-foreground">{t("Aucun message.")}</div>
+                    ) : (
+                      messages.map((m: any) => (
+                        <div key={m.id} className={`px-3 py-2.5 rounded-2xl border text-xs ${m.sender === "patient" ? "bg-[color:var(--mint)]/10 ml-4" : "bg-muted/40 mr-4"}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-semibold text-muted-foreground">{m.sender === "patient" ? t("Patient") : t("Praticien")}</span>
+                            <span className="text-[10px] text-muted-foreground">{new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span>
+                          </div>
+                          <p className="text-[color:var(--navy)] whitespace-pre-wrap">{m.body}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      value={msgBody}
+                      onChange={(e) => setMsgBody(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendReply(); } }}
+                      placeholder={t("Votre réponse...")}
+                      className="flex-1 rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:border-[color:var(--mint)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void sendReply()}
+                      disabled={msgSending || !msgBody.trim()}
+                      className="rounded-xl gradient-mint text-[color:var(--navy)] px-3 py-2 text-xs font-semibold disabled:opacity-60"
+                    >
+                      {t("Envoyer")}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="rounded-3xl border bg-card p-6">
                   <h4 className="font-bold text-[color:var(--navy)]">{t("Prescriptions")}</h4>
                   <div className="mt-4 space-y-3">

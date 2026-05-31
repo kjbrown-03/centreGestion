@@ -68,6 +68,12 @@ export function DashboardLayout({
   const locationSearch = useRouterState({ select: (s) => s.location.search });
 
   const [pwaPrompt, setPwaPrompt] = useState<any>(null);
+  const [iosInstallOpen, setIosInstallOpen] = useState(false);
+  const isIosSafari = typeof window !== "undefined" &&
+    /iphone|ipad|ipod/i.test(window.navigator.userAgent) &&
+    !(window as any).MSStream &&
+    !window.matchMedia?.("(display-mode: standalone)").matches &&
+    !(window.navigator as any).standalone;
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState<string | null>(null);
@@ -409,7 +415,8 @@ export function DashboardLayout({
 
   return (
     <div className="min-h-screen flex bg-muted/30">
-      <aside className="hidden md:flex w-64 flex-col bg-[color:var(--navy)] text-white p-5 sticky top-0 h-screen">
+      {/* Sidebar desktop — safe-area en haut */}
+      <aside className="hidden md:flex w-64 flex-col bg-[color:var(--navy)] text-white sticky top-0 h-screen" style={{ padding: "max(1.25rem, env(safe-area-inset-top, 1.25rem)) 1.25rem max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}>
         <Link to="/" className="flex items-center gap-2 font-display font-bold text-xl mb-10">
           <span className="size-9 rounded-xl gradient-mint grid place-items-center text-[color:var(--navy)]">
             <Activity className="size-5" strokeWidth={2.5} />
@@ -463,10 +470,11 @@ export function DashboardLayout({
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: "spring", stiffness: 260, damping: 28 }}
-              className="h-full w-[min(82vw,280px)] bg-[color:var(--navy)] text-white p-5 flex flex-col"
+              className="h-full w-[min(82vw,280px)] bg-[color:var(--navy)] text-white flex flex-col"
+              style={{ padding: "env(safe-area-inset-top, 1.25rem) 1.25rem max(1.25rem, env(safe-area-inset-bottom, 1.25rem))" }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center justify-between mb-8 pt-1">
                 <Link to="/" className="flex items-center gap-2 font-display font-bold text-xl" onClick={() => setMobileNavOpen(false)}>
                   <span className="size-9 rounded-xl gradient-mint grid place-items-center text-[color:var(--navy)]"><Activity className="size-5" strokeWidth={2.5} /></span>
                   2KC
@@ -500,7 +508,8 @@ export function DashboardLayout({
       </AnimatePresence>
 
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-30 bg-background/80 backdrop-blur border-b">
+        {/* sticky top-0 : le padding-top interne repousse le contenu sous la barre de statut iPhone */}
+        <header className="sticky top-0 z-30 bg-background/80 backdrop-blur border-b" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
           <div className="flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-10 py-3 sm:py-4">
             <button type="button" onClick={() => setMobileNavOpen(true)} className="md:hidden size-10 rounded-xl border bg-card grid place-items-center text-[color:var(--navy)]" aria-label={t("Ouvrir le menu")}>
               <Menu className="size-5" />
@@ -520,6 +529,7 @@ export function DashboardLayout({
                   className="pl-9 pr-4 py-2 rounded-xl border bg-card text-sm w-64 outline-none focus:border-[color:var(--mint)] focus:ring-4 focus:ring-[color:var(--mint)]/20 transition"
                 />
               </div>
+              {/* Bouton install Android/Chrome */}
               {pwaPrompt ? (
                 <button
                   type="button"
@@ -529,6 +539,18 @@ export function DashboardLayout({
                     const choice = await pwaPrompt.userChoice;
                     if (choice.outcome === "accepted") setPwaPrompt(null);
                   }}
+                  className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl gradient-mint text-[color:var(--navy)] hover:brightness-110 transition text-xs font-semibold"
+                  title={t("Installer l'application")}
+                >
+                  <Download className="size-4" />
+                  <span className="hidden sm:inline">{t("Installer")}</span>
+                </button>
+              ) : null}
+              {/* Bouton install iOS Safari */}
+              {isIosSafari && !pwaPrompt ? (
+                <button
+                  type="button"
+                  onClick={() => setIosInstallOpen(true)}
                   className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl gradient-mint text-[color:var(--navy)] hover:brightness-110 transition text-xs font-semibold"
                   title={t("Installer l'application")}
                 >
@@ -701,6 +723,51 @@ export function DashboardLayout({
                 </form>
               </div>
             </motion.section>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Modal iOS : instructions installation Safari */}
+      <AnimatePresence>
+        {iosInstallOpen ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-black/50 flex items-end justify-center p-4"
+            onClick={() => setIosInstallOpen(false)}
+          >
+            <motion.div
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              className="w-full max-w-sm bg-card rounded-3xl border p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-base font-bold text-[color:var(--navy)]">Installer 2KC Santé</p>
+                <button type="button" onClick={() => setIosInstallOpen(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="size-5" />
+                </button>
+              </div>
+              <ol className="space-y-3 text-sm text-muted-foreground">
+                <li className="flex items-start gap-3">
+                  <span className="size-6 rounded-full gradient-mint text-[color:var(--navy)] font-bold text-xs grid place-items-center shrink-0 mt-0.5">1</span>
+                  <span>Touchez le bouton <strong>Partager</strong> <span className="inline-block">⬆️</span> en bas de Safari</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="size-6 rounded-full gradient-mint text-[color:var(--navy)] font-bold text-xs grid place-items-center shrink-0 mt-0.5">2</span>
+                  <span>Faites défiler et touchez <strong>« Sur l'écran d'accueil »</strong></span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="size-6 rounded-full gradient-mint text-[color:var(--navy)] font-bold text-xs grid place-items-center shrink-0 mt-0.5">3</span>
+                  <span>Touchez <strong>« Ajouter »</strong> en haut à droite</span>
+                </li>
+              </ol>
+              <p className="text-xs text-muted-foreground mt-4 text-center">
+                L'app apparaîtra sur votre écran d'accueil comme une vraie application.
+              </p>
+            </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>

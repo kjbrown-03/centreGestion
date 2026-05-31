@@ -133,6 +133,10 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    /* Safe area : contenu ne déborde pas sur notch / home bar */
+    padding-left:   env(safe-area-inset-left,   0px);
+    padding-right:  env(safe-area-inset-right,  0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   h1, h2, h3, h4, h5 {

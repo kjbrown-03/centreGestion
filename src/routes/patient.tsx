@@ -167,6 +167,49 @@ function PatientDashboard() {
     };
   }, [appUser?.email]);
 
+  // Abonnement Realtime : nouvelles factures pour ce patient
+  useEffect(() => {
+    if (!patient?.id) return;
+    let alive = true;
+    let channel: any;
+    getSupabaseAsync().then((supabase) => {
+      if (!alive) return;
+      const sb: any = supabase;
+      channel = supabase
+        .channel(`patient_invoices_${patient.id}_${Date.now()}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "app", table: "invoices", filter: `patient_id=eq.${patient.id}` },
+          async (payload: any) => {
+            const newId = payload?.new?.id;
+            if (!newId) return;
+            // Charger la facture complète avec ses lignes
+            const { data } = await sb
+              .schema("app")
+              .from("invoices")
+              .select("id, invoice_no, status, total, created_at, items:invoice_items (label, qty, unit_price, line_total)")
+              .eq("id", newId)
+              .maybeSingle();
+            if (data) setInvoices((prev) => [data, ...prev.filter((f: any) => f.id !== data.id)]);
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "app", table: "invoices", filter: `patient_id=eq.${patient.id}` },
+          (payload: any) => {
+            const updated = payload?.new;
+            if (!updated?.id) return;
+            setInvoices((prev) => prev.map((f: any) => f.id === updated.id ? { ...f, ...updated } : f));
+          },
+        )
+        .subscribe();
+    });
+    return () => {
+      alive = false;
+      try { if (channel) getSupabaseAsync().then((sb) => sb.removeChannel(channel)); } catch { /* ignore */ }
+    };
+  }, [patient?.id]);
+
   const patientAppointments = useMemo(
     () =>
       [...appointments].sort(
@@ -231,7 +274,7 @@ function PatientDashboard() {
     }
   };
 
-  function openInvoiceForDownload(inv: any) {
+  async function openInvoiceForDownload(inv: any) {
     const items: any[] = inv.items ?? [];
     const total = formatFcfa(Number(inv.total ?? 0));
     const dateEmis = format(new Date(inv.created_at), "dd/MM/yyyy", { locale: fr });
@@ -335,13 +378,27 @@ function PatientDashboard() {
 </html>`;
 
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const filename = `Facture_${inv.invoice_no}_2KC.html`;
+
+    // Safari iOS : Web Share API (Partager → Imprimer → PDF)
+    if (navigator.share && navigator.canShare?.({ files: [new File([blob], filename, { type: "text/html" })] })) {
+      try {
+        await navigator.share({
+          files: [new File([blob], filename, { type: "text/html" })],
+          title: `Facture ${inv.invoice_no}`,
+        });
+        return;
+      } catch {
+        // annulé par l'utilisateur ou non supporté — on continue avec fallback
+      }
+    }
+
     const url = URL.createObjectURL(blob);
     const win = window.open(url, "_blank");
     if (!win) {
-      // Popup bloqué (fréquent sur mobile) → téléchargement direct HTML
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Facture_${inv.invoice_no}_2KC.html`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -352,7 +409,7 @@ function PatientDashboard() {
     setTimeout(() => URL.revokeObjectURL(url), 15000);
   }
 
-  function openPrescriptionForDownload(presc: any) {
+  async function openPrescriptionForDownload(presc: any) {
     const items: any[] = presc.items ?? [];
     const dateEmis = format(new Date(presc.created_at), "dd MMMM yyyy", { locale: fr });
     const patientName = patient ? `${patient.first_name} ${patient.last_name}` : "Patient";
@@ -427,12 +484,21 @@ function PatientDashboard() {
 </html>`;
 
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const filename = `Ordonnance_${presc.id.slice(0, 8)}_2KC.html`;
+
+    if (navigator.share && navigator.canShare?.({ files: [new File([blob], filename, { type: "text/html" })] })) {
+      try {
+        await navigator.share({ files: [new File([blob], filename, { type: "text/html" })], title: "Ordonnance 2KC" });
+        return;
+      } catch { /* annulé */ }
+    }
+
     const url = URL.createObjectURL(blob);
     const win = window.open(url, "_blank");
     if (!win) {
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Ordonnance_${presc.id.slice(0, 8)}_2KC.html`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -893,7 +959,7 @@ function PatientDashboard() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openInvoiceForDownload(f)}
+                    onClick={() => void openInvoiceForDownload(f)}
                     className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border hover:bg-muted"
                     title={t("Télécharger en PDF")}
                   >
@@ -1124,7 +1190,7 @@ function PatientDashboard() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => openPrescriptionForDownload(presc)}
+                      onClick={() => void openPrescriptionForDownload(presc)}
                       className="rounded-xl text-muted-foreground border-border hover:border-[color:var(--mint)] hover:text-[color:var(--navy)]"
                       title={t("Télécharger l'ordonnance en PDF")}
                     >
@@ -1245,7 +1311,7 @@ function PatientDashboard() {
                   {t("Fermer")}
                 </Button>
                 <Button
-                  onClick={() => openPrescriptionForDownload(activePresc)}
+                  onClick={() => void openPrescriptionForDownload(activePresc)}
                   className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 border-none"
                 >
                   <Download className="size-4" /> {t("Télécharger PDF")}
@@ -1345,7 +1411,7 @@ function PatientDashboard() {
                   {t("Fermer")}
                 </Button>
                 <Button
-                  onClick={() => openInvoiceForDownload(activeInvoice)}
+                  onClick={() => void openInvoiceForDownload(activeInvoice)}
                   className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 border-none"
                 >
                   <Download className="size-4" /> {t("Télécharger PDF")}

@@ -8,12 +8,13 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Toaster } from "sonner";
 
 import { useAuth, useAuditLog } from "@/lib/store";
-import { homeText, useI18n } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 import { InstallPWA } from "@/components/site/InstallPWA";
+import { SplashScreen } from "@/components/SplashScreen";
 
 import appCss from "../styles.css?url";
 
@@ -137,7 +138,24 @@ function RootComponent() {
   const lang = useI18n((s) => s.lang);
   const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const welcomeSpokenRef = useRef(false);
+
+  // Splash screen — à chaque chargement de page
+  const [splashDone, setSplashDone] = useState(false);
+  const handleSplashDone = () => {
+    setSplashDone(true);
+    // Voix de bienvenue dès que le splash se termine
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const text = lang === "fr"
+        ? "Bienvenue dans notre application de gestion de centre de santé."
+        : "Welcome to our health centre management application.";
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
+      utterance.rate = 0.9;
+      window.speechSynthesis.speak(utterance);
+    } catch { /* ignore */ }
+  };
 
   // Enregistrement du service worker (PWA installable)
   useEffect(() => {
@@ -151,40 +169,6 @@ function RootComponent() {
     else window.addEventListener("load", register, { once: true });
   }, []);
 
-  // Message vocal de bienvenue : une seule fois, à la première entrée dans
-  // l'application (page d'accueil). Ne se redéclenche pas en changeant de page.
-  useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    if (welcomeSpokenRef.current) return;
-    // Uniquement au point d'entrée de l'app (page d'accueil)
-    if (pathname !== "/") return;
-    // Déjà prononcé pendant cette session de navigation ?
-    try {
-      if (sessionStorage.getItem("2kc-welcome-spoken") === "1") {
-        welcomeSpokenRef.current = true;
-        return;
-      }
-    } catch {
-      // sessionStorage indisponible — on continue avec le garde en mémoire
-    }
-
-    welcomeSpokenRef.current = true;
-    try {
-      sessionStorage.setItem("2kc-welcome-spoken", "1");
-    } catch {
-      // ignore
-    }
-
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(homeText[lang].welcome);
-      utterance.lang = lang === "fr" ? "fr-FR" : "en-US";
-      utterance.rate = 0.95;
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      // Certains navigateurs bloquent la lecture auto avant une interaction.
-    }
-  }, [pathname, lang]);
 
   useEffect(() => {
     const unsub = router.subscribe("onResolved", () => {
@@ -235,6 +219,9 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {!splashDone ? (
+        <SplashScreen onDone={handleSplashDone} />
+      ) : null}
       <Outlet />
       <InstallPWA />
       <Toaster richColors closeButton position="top-right" />
