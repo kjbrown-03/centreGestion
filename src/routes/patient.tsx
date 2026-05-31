@@ -20,7 +20,6 @@ import {
   Clock,
   Plus,
   Download,
-  Printer,
   FileHeart,
   MessageSquare,
   ShieldCheck,
@@ -229,19 +228,217 @@ function PatientDashboard() {
     }
   };
 
-  const handleDownloadPrescription = (id: string) => {
-    toast.success(`Ordonnance ${id} enregistrée sur votre appareil (PDF simulé).`);
-  };
+  function openInvoiceForDownload(inv: any) {
+    const items: any[] = inv.items ?? [];
+    const total = Number(inv.total ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 2 });
+    const dateEmis = format(new Date(inv.created_at), "dd/MM/yyyy", { locale: fr });
+    const patientName = patient ? `${patient.first_name} ${patient.last_name}` : "Patient";
+    const statusLabel = inv.status === "payee" ? "Payée ✓" : inv.status === "emise" ? "Émise" : inv.status ?? "";
+    const statusColor = inv.status === "payee" ? "#10b981" : "#f59e0b";
 
-  const handlePrintPrescription = () => {
-    window.print();
-    toast.success("Impression de l'ordonnance lancée.");
-  };
+    const rowsHtml = items.length > 0
+      ? items.map((li: any) => `
+        <tr>
+          <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0">${li.label ?? ""}</td>
+          <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;text-align:center">${li.qty ?? 1}</td>
+          <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;text-align:right">${Number(li.unit_price ?? 0).toLocaleString("fr-FR")} XAF</td>
+          <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;text-align:right">${Number(li.line_total ?? 0).toLocaleString("fr-FR")} XAF</td>
+        </tr>`).join("")
+      : `<tr><td colspan="4" style="padding:16px;text-align:center;color:#94a3b8">Aucun détail disponible.</td></tr>`;
 
-  const handlePrintInvoice = () => {
-    window.print();
-    toast.success("Impression de la facture lancée.");
-  };
+    const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Facture ${inv.invoice_no} — Centre 2KC</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1e293b;padding:40px 32px;max-width:740px;margin:0 auto}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:24px;border-bottom:2px solid #e2e8f0}
+  .brand-icon{width:42px;height:42px;background:linear-gradient(135deg,#a8f0c8,#6ee7b7);border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;color:#1e3a5f;margin-right:12px;vertical-align:middle}
+  .brand-name{font-size:22px;font-weight:800;color:#1e3a5f;vertical-align:middle}
+  .brand-sub{font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:#64748b;margin-top:4px}
+  .brand-addr{font-size:11px;color:#94a3b8;margin-top:2px}
+  .meta{text-align:right}
+  .invoice-num{font-size:20px;font-weight:800;color:#1e3a5f}
+  .status-badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px;background:${inv.status==="payee"?"#d1fae5":"#fef3c7"};color:${statusColor}}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:28px 0;padding:20px;background:#f8fafc;border-radius:12px}
+  .info-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;font-weight:600}
+  .info-value{font-size:15px;font-weight:600;color:#1e3a5f;margin-top:3px}
+  table{width:100%;border-collapse:collapse}
+  thead tr{background:#1e3a5f;color:#fff}
+  thead th{padding:12px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .total-row td{padding:16px;font-weight:800;font-size:16px;border-top:2px solid #1e3a5f}
+  .footer{margin-top:48px;padding-top:18px;border-top:1px solid #e2e8f0;text-align:center;font-size:11px;color:#94a3b8;line-height:1.6}
+  @media print{body{padding:16px}@page{margin:1cm;size:A4 portrait}}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <span class="brand-icon">2KC</span>
+      <span class="brand-name">2KC</span>
+      <div class="brand-sub">Centre de Santé Pluridisciplinaire</div>
+      <div class="brand-addr">Douala, Cameroun &nbsp;·&nbsp; +237 693 904 197</div>
+    </div>
+    <div class="meta">
+      <div class="invoice-num">${inv.invoice_no}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:4px">Émise le ${dateEmis}</div>
+      <div><span class="status-badge">${statusLabel}</span></div>
+    </div>
+  </div>
+
+  <div class="info-grid">
+    <div>
+      <div class="info-label">Facturé à</div>
+      <div class="info-value">${patientName}</div>
+    </div>
+    <div style="text-align:right">
+      <div class="info-label">Montant total</div>
+      <div class="info-value" style="font-size:20px;color:${statusColor}">${total} XAF</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Désignation</th>
+        <th style="text-align:center">Qté</th>
+        <th style="text-align:right">Prix unit.</th>
+        <th style="text-align:right">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+      <tr class="total-row">
+        <td colspan="3" style="text-align:right;color:#64748b;font-size:13px;font-weight:600">TOTAL</td>
+        <td style="text-align:right;color:#1e3a5f">${total} XAF</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <p>Centre de Santé 2KC &nbsp;·&nbsp; Douala, Cameroun &nbsp;·&nbsp; +237 693 904 197</p>
+    <p>Document généré le ${format(new Date(), "dd/MM/yyyy", { locale: fr })} &nbsp;·&nbsp; Conservez ce document comme justificatif</p>
+  </div>
+
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() { window.print(); }, 400);
+    });
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (!win) {
+      // Popup bloqué (fréquent sur mobile) → téléchargement direct HTML
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Facture_${inv.invoice_no}_2KC.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success("Facture téléchargée. Ouvrez le fichier pour l'imprimer en PDF.");
+    } else {
+      toast.success("Facture ouverte — sélectionnez « Enregistrer en PDF » dans la fenêtre d'impression.");
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+  }
+
+  function openPrescriptionForDownload(presc: any) {
+    const items: any[] = presc.items ?? [];
+    const dateEmis = format(new Date(presc.created_at), "dd MMMM yyyy", { locale: fr });
+    const patientName = patient ? `${patient.first_name} ${patient.last_name}` : "Patient";
+    const practName = presc.practitioner?.full_name ?? "Médecin";
+
+    const medsHtml = items.map((m: any) => `
+      <div style="margin-bottom:18px">
+        <p style="font-weight:700;font-size:16px;color:#1e293b">• ${m.medicine_name}</p>
+        <p style="font-size:13px;color:#475569;margin-left:16px;margin-top:3px;font-family:monospace">
+          ${[m.frequency, m.duration].filter(Boolean).join(" — ") || "Voir instructions"}
+        </p>
+      </div>`).join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ordonnance — Centre 2KC</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1e293b;padding:40px 32px;max-width:680px;margin:0 auto}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:20px;border-bottom:2px solid #e2e8f0}
+  .brand-icon{width:40px;height:40px;background:linear-gradient(135deg,#a8f0c8,#6ee7b7);border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;color:#1e3a5f;margin-right:10px;vertical-align:middle}
+  .rx{font-family:Georgia,serif;font-style:italic;font-size:60px;color:#e2e8f0;font-weight:900;margin:20px 0 10px}
+  .sig{width:64px;height:64px;border-radius:50%;border:2px dashed #6ee7b7;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#6ee7b7;text-transform:uppercase;transform:rotate(12deg)}
+  @media print{body{padding:16px}@page{margin:1cm;size:A4 portrait}}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <span class="brand-icon">2KC</span>
+      <span style="font-size:22px;font-weight:800;color:#1e3a5f;vertical-align:middle">2KC</span>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:#64748b;margin-top:4px">Centre de Santé Pluridisciplinaire</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:2px">Douala, Cameroun · +237 693 904 197</div>
+    </div>
+    <div style="text-align:right;font-size:13px;color:#64748b">
+      <p style="font-weight:700;color:#1e293b;font-size:14px">${practName}</p>
+      <p>Médecin généraliste</p>
+      <p style="margin-top:4px;font-size:11px;font-family:monospace;color:#94a3b8">RPPS: 10009876543</p>
+    </div>
+  </div>
+
+  <div style="margin:24px 0;display:flex;justify-content:space-between;font-size:14px">
+    <div><span style="color:#94a3b8">Patient : </span><strong>${patientName}</strong></div>
+    <div><span style="color:#94a3b8">Date : </span><strong>${dateEmis}</strong></div>
+  </div>
+
+  <div class="rx">Rx</div>
+
+  <div style="padding-left:24px;min-height:140px">${medsHtml}</div>
+
+  <div style="margin-top:48px;padding-top:20px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:flex-end">
+    <div style="font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:6px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      Ordonnance signée numériquement
+    </div>
+    <div style="text-align:right">
+      <p style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Signature &amp; Cachet</p>
+      <div class="sig">2KC Santé</div>
+      <p style="font-size:12px;font-weight:700;color:#1e293b;margin-top:8px">${practName}</p>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() { window.print(); }, 400);
+    });
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (!win) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Ordonnance_${presc.id.slice(0, 8)}_2KC.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success("Ordonnance téléchargée.");
+    } else {
+      toast.success("Ordonnance ouverte — sélectionnez « Enregistrer en PDF ».");
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+  }
 
   async function saveMedicalProfile() {
     try {
@@ -686,8 +883,17 @@ function PatientDashboard() {
                     type="button"
                     onClick={() => setActiveInvoice(f)}
                     className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border hover:bg-muted"
+                    title="Voir les détails"
                   >
-                    <Download className="size-4" /> Télécharger
+                    <FileText className="size-4" /> Voir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openInvoiceForDownload(f)}
+                    className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-1 rounded-full border hover:bg-muted"
+                    title="Télécharger en PDF"
+                  >
+                    <Download className="size-4" /> PDF
                   </button>
                 </div>
               ))}
@@ -914,8 +1120,9 @@ function PatientDashboard() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleDownloadPrescription(presc.id)}
+                      onClick={() => openPrescriptionForDownload(presc)}
                       className="rounded-xl text-muted-foreground border-border hover:border-[color:var(--mint)] hover:text-[color:var(--navy)]"
+                      title="Télécharger l'ordonnance en PDF"
                     >
                       <Download className="size-4" />
                     </Button>
@@ -1034,10 +1241,10 @@ function PatientDashboard() {
                   Fermer
                 </Button>
                 <Button
-                  onClick={handlePrintPrescription}
+                  onClick={() => openPrescriptionForDownload(activePresc)}
                   className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 border-none"
                 >
-                  <Printer className="size-4" /> Imprimer
+                  <Download className="size-4" /> Télécharger PDF
                 </Button>
               </div>
             </motion.div>
@@ -1134,10 +1341,10 @@ function PatientDashboard() {
                   Fermer
                 </Button>
                 <Button
-                  onClick={handlePrintInvoice}
+                  onClick={() => openInvoiceForDownload(activeInvoice)}
                   className="rounded-xl bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 border-none"
                 >
-                  <Printer className="size-4" /> Imprimer / Télécharger
+                  <Download className="size-4" /> Télécharger PDF
                 </Button>
               </div>
             </motion.div>

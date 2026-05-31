@@ -13,6 +13,7 @@ import { Toaster } from "sonner";
 
 import { useAuth, useAuditLog } from "@/lib/store";
 import { homeText, useI18n } from "@/lib/i18n";
+import { InstallPWA } from "@/components/site/InstallPWA";
 
 import appCss from "../styles.css?url";
 
@@ -77,10 +78,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: "2KC — Centre de Santé · Plateforme médicale moderne" },
       { name: "description", content: "Centre de Santé 2KC : médecine humaine et plateforme moderne pour patients, médecins, infirmiers et personnel d'accueil." },
       { name: "author", content: "Centre 2KC" },
+      { name: "theme-color", content: "#0a1f3d" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "2KC Santé" },
+      { name: "application-name", content: "2KC Santé" },
       { property: "og:title", content: "2KC — Centre de Santé" },
       { property: "og:description", content: "Une médecine moderne, humaine et accessible à tous." },
       { property: "og:type", content: "website" },
@@ -88,6 +95,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
@@ -129,6 +138,18 @@ function RootComponent() {
   const router = useRouter();
   const pathname = useRouterState({ select: (s: any) => s.location.pathname });
   const homeVoiceKeyRef = useRef<string | null>(null);
+
+  // Enregistrement du service worker (PWA installable)
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    const register = () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {
+        // ignore — l'app reste fonctionnelle sans SW
+      });
+    };
+    if (document.readyState === "complete") register();
+    else window.addEventListener("load", register, { once: true });
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -210,6 +231,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
+      <InstallPWA />
       <Toaster richColors closeButton position="top-right" />
     </QueryClientProvider>
   );

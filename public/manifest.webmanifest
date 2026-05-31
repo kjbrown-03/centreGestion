@@ -1,0 +1,35 @@
+{
+  "name": "2KC — Centre de Santé",
+  "short_name": "2KC Santé",
+  "description": "Plateforme médicale du Centre de Santé 2KC : rendez-vous, ordonnances, factures et suivi patient.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a1f3d",
+  "theme_color": "#0a1f3d",
+  "lang": "fr",
+  "dir": "ltr",
+  "categories": ["medical", "health", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
