@@ -105,7 +105,7 @@ function PharmacienHome() {
           setMeds((prev) =>
             prev.map((m) =>
               m.id === r.id
-                ? { ...m, stock: r.stock ?? m.stock, threshold: r.threshold ?? m.threshold }
+                ? { ...m, stock: r.stock ?? m.stock, threshold: r.threshold ?? m.threshold, price: Number(r.unit_price ?? m.price) }
                 : m,
             ),
           );
