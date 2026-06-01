@@ -194,7 +194,52 @@ function Pharmacie() {
   }
 
   useEffect(() => {
+    let alive = true;
     void load();
+
+    let channel: any;
+    getSupabaseAsync().then((supabase) => {
+      if (!alive) return;
+      channel = supabase
+        .channel("admin_stock_realtime")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "app", table: "stock_items" },
+          (payload: any) => {
+            if (!alive) return;
+            const r = payload.new ?? payload.old;
+            if (!r) return;
+            if (payload.eventType === "DELETE") {
+              setMedicines((prev) => prev.filter((m) => m.id !== r.id));
+            } else {
+              setMedicines((prev) => {
+                const exists = prev.some((m) => m.id === r.id);
+                const updated: Medicine = {
+                  id: r.id,
+                  name: r.name,
+                  category: r.category ?? "Pharmacie",
+                  stock: r.stock ?? 0,
+                  threshold: r.threshold ?? 10,
+                  price: Number(r.unit_price ?? 0),
+                  expiry: r.expiry_date ?? "",
+                  image: DEFAULT_IMAGE,
+                };
+                return exists
+                  ? prev.map((m) => (m.id === r.id ? updated : m))
+                  : [updated, ...prev];
+              });
+            }
+          },
+        )
+        .subscribe();
+    });
+
+    return () => {
+      alive = false;
+      getSupabaseAsync().then((supabase) => {
+        if (channel) supabase.removeChannel(channel);
+      });
+    };
   }, []);
 
   useEffect(() => {
@@ -228,7 +273,7 @@ function Pharmacie() {
     return Array.from(map.values()).sort((a, b) => b.count - a.count);
   }, [medicines]);
 
-  const lowStock = useMemo(() => medicines.filter((m) => m.stock > 0 && m.stock <= m.threshold), [medicines]);
+  const lowStock = useMemo(() => medicines.filter((m) => m.stock > 0 && m.stock < 10), [medicines]);
   const outOfStock = useMemo(() => medicines.filter((m) => m.stock <= 0), [medicines]);
   const stockValue = useMemo(() => medicines.reduce((s, m) => s + m.stock * m.price, 0), [medicines]);
   const consumedUnits = useMemo(
@@ -434,7 +479,7 @@ function Pharmacie() {
             <AnimatePresence mode="popLayout">
               {filtered.map((m) => {
                 const rupture = m.stock <= 0;
-                const low = !rupture && m.stock <= m.threshold;
+                const low = !rupture && m.stock < 10;
                 return (
                   <motion.div key={m.id} layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="rounded-2xl border bg-card overflow-hidden hover:shadow-glow transition">
                     <div className="relative aspect-[5/3] overflow-hidden bg-muted">

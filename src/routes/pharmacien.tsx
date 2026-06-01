@@ -37,11 +37,9 @@ function PharmacienHome() {
   const [aiLoading, setAiLoading] = useState(false);
   const [advice, setAdvice] = useState<string>("");
   const [query, setQuery] = useState("");
-  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
-  const [editingPriceValue, setEditingPriceValue] = useState("");
-
   useEffect(() => {
     let alive = true;
+    let channel: ReturnType<ReturnType<typeof getSupabase>["channel"]> | null = null;
 
     async function load() {
       setLoading(true);
@@ -93,12 +91,35 @@ function PharmacienHome() {
     }
 
     void load();
+
+    // Realtime — met à jour le stock sans rechargement manuel
+    const supabase = getSupabase();
+    channel = supabase
+      .channel("pharmacien_stock_realtime")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "app", table: "stock_items" },
+        (payload: any) => {
+          if (!alive) return;
+          const r = payload.new;
+          setMeds((prev) =>
+            prev.map((m) =>
+              m.id === r.id
+                ? { ...m, stock: r.stock ?? m.stock, threshold: r.threshold ?? m.threshold }
+                : m,
+            ),
+          );
+        },
+      )
+      .subscribe();
+
     return () => {
       alive = false;
+      try { supabase.removeChannel(channel!); } catch { /* ignore */ }
     };
   }, []);
 
-  const lowStock = useMemo(() => meds.filter((m: Medicine) => m.stock <= m.threshold), [meds]);
+  const lowStock = useMemo(() => meds.filter((m: Medicine) => m.stock < 10), [meds]);
   const filteredMeds = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return meds;
@@ -219,30 +240,6 @@ function PharmacienHome() {
       toast.error(err?.message ?? t("Service indisponible."));
     } finally {
       setAiLoading(false);
-    }
-  }
-
-  async function savePrice(med: Medicine) {
-    const newPrice = Number(editingPriceValue);
-    if (isNaN(newPrice) || newPrice < 0) {
-      toast.error(t("Prix invalide."));
-      return;
-    }
-    try {
-      const supabase = getSupabase();
-      const { error } = await (supabase as any)
-        .schema("app")
-        .from("stock_items")
-        .update({ unit_price: newPrice })
-        .eq("id", med.id);
-      if (error) throw error;
-      setMeds((prev) => prev.map((m) => (m.id === med.id ? { ...m, price: newPrice } : m)));
-      toast.success(t("Prix mis à jour."));
-    } catch (err: any) {
-      toast.error(err?.message ?? t("Impossible de mettre à jour le prix."));
-    } finally {
-      setEditingPriceId(null);
-      setEditingPriceValue("");
     }
   }
 
@@ -385,36 +382,9 @@ function PharmacienHome() {
                       {t("unités")}
                     </p>
                   </div>
-                  {editingPriceId === m.id ? (
-                    <form
-                      onSubmit={(e) => { e.preventDefault(); void savePrice(m); }}
-                      className="flex items-center gap-1"
-                    >
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        autoFocus
-                        value={editingPriceValue}
-                        onChange={(e) => setEditingPriceValue(e.target.value)}
-                        className="w-24 rounded-lg border px-2 py-1 text-sm text-right"
-                        onBlur={() => void savePrice(m)}
-                      />
-                      <span className="text-xs text-muted-foreground">FCFA</span>
-                    </form>
-                  ) : (
-                    <button
-                      type="button"
-                      title={t("Cliquer pour modifier le prix")}
-                      onClick={() => {
-                        setEditingPriceId(m.id);
-                        setEditingPriceValue(String(m.price));
-                      }}
-                      className={`text-sm font-semibold px-2 py-0.5 rounded-lg transition hover:bg-muted ${m.price === 0 ? "text-amber-600 underline decoration-dashed" : "text-[color:var(--navy)]"}`}
-                    >
-                      {m.price === 0 ? t("Prix à définir") : formatFcfa(m.price)}
-                    </button>
-                  )}
+                  <p className="text-sm font-semibold text-[color:var(--navy)]">
+                    {formatFcfa(m.price)}
+                  </p>
                 </div>
               </div>
             ))}
