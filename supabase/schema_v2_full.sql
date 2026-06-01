@@ -966,11 +966,11 @@ for insert with check (app.has_any_role(array['admin','pharmacien','infirmier']:
 -- billing: invoices read secretaire/comptable/directeur/admin; payments read comptable/directeur/admin
 drop policy if exists invoices_read_finance on app.invoices;
 create policy invoices_read_finance on app.invoices
-for select using (app.has_any_role(array['admin','comptable','secretaire','directeur']::app.user_role[]));
+for select using (app.has_any_role(array['admin','comptable','secretaire','directeur','pharmacien']::app.user_role[]));
 
 drop policy if exists invoices_insert_finance on app.invoices;
 create policy invoices_insert_finance on app.invoices
-for insert with check (app.has_any_role(array['secretaire','comptable']::app.user_role[]));
+for insert with check (app.has_any_role(array['secretaire','comptable','pharmacien']::app.user_role[]));
 
 drop policy if exists invoices_update_comptable on app.invoices;
 create policy invoices_update_comptable on app.invoices

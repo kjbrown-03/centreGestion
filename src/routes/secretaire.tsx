@@ -19,12 +19,6 @@ function startOfTomorrowIso() {
   d.setHours(24, 0, 0, 0);
   return d.toISOString();
 }
-function startOfInDaysIso(n: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
 function formatTime(ts: string) {
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -51,7 +45,6 @@ function SecretaireHome() {
 
   const todayStart = useMemo(() => startOfTodayIso(), []);
   const tomorrowStart = useMemo(() => startOfTomorrowIso(), []);
-  const in7Days = useMemo(() => startOfInDaysIso(7), []);
 
   // Initialize from ?q=
   useEffect(() => {
@@ -94,8 +87,7 @@ function SecretaireHome() {
             practitioner:practitioner_id (full_name)
           `,
           )
-          .gte("scheduled_at", todayStart)
-          .lt("scheduled_at", in7Days);
+          .gte("scheduled_at", todayStart);
 
         if (q) {
           if (patientIds.length > 0) {
@@ -148,7 +140,7 @@ function SecretaireHome() {
         // ignore
       }
     };
-  }, [todayStart, in7Days, query]);
+  }, [todayStart, query]);
 
   const queue = useMemo(
     () =>
@@ -200,7 +192,6 @@ function SecretaireHome() {
           `id, scheduled_at, status, reason, patient:patient_id (first_name, last_name), practitioner:practitioner_id (full_name)`,
         )
         .gte("scheduled_at", todayStart)
-        .lt("scheduled_at", in7Days)
         .order("scheduled_at", { ascending: true });
       if (!rErr) setAppts((data ?? []) as any);
     } catch (err: any) {

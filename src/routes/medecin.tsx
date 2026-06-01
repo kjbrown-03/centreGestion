@@ -72,12 +72,6 @@ function startOfTomorrowIso() {
   return d.toISOString();
 }
 
-function startOfInDaysIso(n: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
 
 function formatTime(iso: string) {
   const d = new Date(iso);
@@ -124,7 +118,13 @@ function MedecinHome() {
   const [examNotes, setExamNotes] = useState("");
   const [creatingExam, setCreatingExam] = useState(false);
 
-  const todayCount = appointments.length;
+  const todayCount = useMemo(() => {
+    const todayStart = startOfTodayIso();
+    const tomorrowStart = startOfTomorrowIso();
+    return appointments.filter(
+      (a) => a.scheduled_at >= todayStart && a.scheduled_at < tomorrowStart,
+    ).length;
+  }, [appointments]);
 
   const followedPatientsCount = useMemo(() => {
     const ids = new Set<string>();
@@ -205,7 +205,6 @@ function MedecinHome() {
         }
 
         const start = startOfTodayIso();
-        const end = startOfInDaysIso(7);
 
         // Build query with optional search on patient name or reason
         const sb: any = supabase;
@@ -227,8 +226,7 @@ function MedecinHome() {
             "id, scheduled_at, status, reason, patient:patient_id (id, first_name, last_name, phone)",
           )
           .eq("practitioner_id", authUser.id)
-          .gte("scheduled_at", start)
-          .lt("scheduled_at", end);
+          .gte("scheduled_at", start);
 
         if (q) {
           if (patientIds.length > 0) {
@@ -644,42 +642,89 @@ function MedecinHome() {
           className="rounded-3xl border bg-card p-7"
         >
           <h3 className="text-lg font-bold text-[color:var(--navy)]">{t("Agenda du jour")}</h3>
-          <div className="mt-5 space-y-2">
-            {(loading ? [] : appointments).map((a, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.06 }}
-                whileHover={{ x: 4 }}
-                className="flex items-center gap-4 p-4 rounded-2xl border hover:border-[color:var(--mint)]/50 hover:bg-muted/40 transition cursor-pointer"
-                onClick={() => (a.patient ? void openPatientFile(a) : undefined)}
-              >
-                <div className="flex flex-col items-center justify-center size-14 rounded-xl bg-[color:var(--navy)] text-white">
-                  <span className="text-xs text-white/60">
-                    {formatTime(a.scheduled_at).split(":")[0]}h
-                  </span>
-                  <span className="text-lg font-bold leading-none">
-                    {formatTime(a.scheduled_at).split(":")[1]}
-                  </span>
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-[color:var(--navy)]">
-                    {a.patient ? `${a.patient.first_name} ${a.patient.last_name}` : t("Patient")}
+          <div className="mt-5 space-y-4">
+            {/* Confirmés — à recevoir */}
+            {(() => {
+              const confirmed = (loading ? [] : appointments).filter(
+                (a) => a.status === "confirme" || a.status === "confirmé",
+              );
+              return confirmed.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--mint)]">
+                    {t("À recevoir")} ({confirmed.length})
                   </p>
-                  <p className="text-sm text-muted-foreground">{a.reason ?? t("Consultation")}</p>
+                  {confirmed.map((a, i) => (
+                    <motion.div
+                      key={a.id}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.06 }}
+                      whileHover={{ x: 4 }}
+                      className="flex items-center gap-4 p-4 rounded-2xl border border-[color:var(--mint)]/30 hover:bg-muted/40 transition cursor-pointer"
+                      onClick={() => (a.patient ? void openPatientFile(a) : undefined)}
+                    >
+                      <div className="flex flex-col items-center justify-center size-14 rounded-xl bg-[color:var(--navy)] text-white">
+                        <span className="text-xs text-white/60">
+                          {formatTime(a.scheduled_at).split(":")[0]}h
+                        </span>
+                        <span className="text-lg font-bold leading-none">
+                          {formatTime(a.scheduled_at).split(":")[1]}
+                        </span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-[color:var(--navy)]">
+                          {a.patient ? `${a.patient.first_name} ${a.patient.last_name}` : t("Patient")}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{a.reason ?? t("Consultation")}</p>
+                      </div>
+                    </motion.div>
+                  ))}
                 </div>
-                <span
-                  className={`text-xs font-medium px-3 py-1 rounded-full ${
-                    a.status === "confirme" || a.status === "confirmé"
-                      ? "bg-[color:var(--mint)]/20 text-[color:var(--navy)]"
-                      : "bg-amber-100 text-amber-700"
-                  }`}
-                >
-                  {a.status}
-                </span>
-              </motion.div>
-            ))}
+              ) : null;
+            })()}
+
+            {/* Terminés — consultation faite */}
+            {(() => {
+              const done = (loading ? [] : appointments).filter(
+                (a) => a.status === "termine" || a.status === "terminé",
+              );
+              return done.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("Terminés")} ({done.length})
+                  </p>
+                  {done.map((a, i) => (
+                    <motion.div
+                      key={a.id}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.06 }}
+                      whileHover={{ x: 4 }}
+                      className="flex items-center gap-4 p-4 rounded-2xl border bg-muted/30 opacity-70 transition cursor-pointer"
+                      onClick={() => (a.patient ? void openPatientFile(a) : undefined)}
+                    >
+                      <div className="flex flex-col items-center justify-center size-14 rounded-xl bg-muted text-muted-foreground">
+                        <span className="text-xs">
+                          {formatTime(a.scheduled_at).split(":")[0]}h
+                        </span>
+                        <span className="text-lg font-bold leading-none">
+                          {formatTime(a.scheduled_at).split(":")[1]}
+                        </span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-muted-foreground line-through">
+                          {a.patient ? `${a.patient.first_name} ${a.patient.last_name}` : t("Patient")}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{a.reason ?? t("Consultation")}</p>
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
+                        {t("terminé")}
+                      </span>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : null;
+            })()}
 
             {!loading && appointments.length === 0 ? (
               <div className="rounded-2xl border bg-muted/40 p-5 text-sm text-muted-foreground">
